@@ -24,26 +24,26 @@ const STORE_META: Record<Store, { label: string; color: string; emoji: string }>
 }
 
 const now = new Date()
-const MOCK_ORDERS: Order[] = [
-  { id: '1', store: 'etsy', product: 'Handmade ceramic mug', buyer: 'Sarah M.', amount: 34, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString() },
-  { id: '2', store: 'amazon', product: 'Wireless earbuds', buyer: 'James K.', amount: 89.99, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString() },
-  { id: '3', store: 'etsy', product: 'Vintage book set', buyer: 'Emma R.', amount: 45.50, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '4', store: 'tiktok', product: 'Customized phone case', buyer: 'Lucas P.', amount: 28, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString() },
-  { id: '5', store: 'shopify', product: 'Organic skincare bundle', buyer: 'Maya T.', amount: 72.00, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString() },
-  { id: '6', store: 'whatnot', product: 'Limited edition poster', buyer: 'Noah D.', amount: 18.99, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '7', store: 'ebay', product: 'Retro camera', buyer: 'Olivia S.', amount: 95.00, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 45 * 60 * 1000).toISOString() },
-  { id: '8', store: 'amazon', product: 'Smart home hub', buyer: 'Chris W.', amount: 79.99, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 7 * 60 * 60 * 1000).toISOString() },
-  { id: '9', store: 'etsy', product: 'Hand-painted art print', buyer: 'Jordan L.', amount: 52, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '10', store: 'tiktok', product: 'UV nail lamp', buyer: 'Zara H.', amount: 35.50, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 30 * 60 * 1000).toISOString() },
-  { id: '11', store: 'shopify', product: 'Wireless charging pad', buyer: 'Marcus J.', amount: 49.99, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '12', store: 'whatnot', product: 'Collectible figurine', buyer: 'Riley V.', amount: 62, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString() },
-  { id: '13', store: 'ebay', product: 'Vintage watch', buyer: 'Sophia B.', amount: 88.50, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '14', store: 'amazon', product: 'Portable projector', buyer: 'Aiden F.', amount: 124.99, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 15 * 60 * 1000).toISOString() },
-  { id: '15', store: 'etsy', product: 'Macramé wall hanging', buyer: 'Bella C.', amount: 41, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString() },
-  { id: '16', store: 'tiktok', product: 'LED strip lights', buyer: 'Tyler N.', amount: 32.75, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '17', store: 'shopify', product: 'Eco water bottle', buyer: 'Ivy Q.', amount: 27.00, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 20 * 60 * 1000).toISOString() },
-  { id: '18', store: 'whatnot', product: 'Mystery box', buyer: 'Xavier E.', amount: 55.99, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 9 * 60 * 60 * 1000).toISOString() },
-].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+const MOCK_ORDERS = [
+  { id: '1', store: 'etsy' as const, product: 'Handmade ceramic mug', buyer: 'Sarah M.', amount: 34, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString() },
+  { id: '2', store: 'amazon' as const, product: 'Wireless earbuds', buyer: 'James K.', amount: 89.99, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString() },
+  { id: '3', store: 'etsy' as const, product: 'Vintage book set', buyer: 'Emma R.', amount: 45.50, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: '4', store: 'tiktok' as const, product: 'Customized phone case', buyer: 'Lucas P.', amount: 28, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString() },
+  { id: '5', store: 'shopify' as const, product: 'Organic skincare bundle', buyer: 'Maya T.', amount: 72.00, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString() },
+  { id: '6', store: 'whatnot' as const, product: 'Limited edition poster', buyer: 'Noah D.', amount: 18.99, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: '7', store: 'ebay' as const, product: 'Retro camera', buyer: 'Olivia S.', amount: 95.00, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 45 * 60 * 1000).toISOString() },
+  { id: '8', store: 'amazon' as const, product: 'Smart home hub', buyer: 'Chris W.', amount: 79.99, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 7 * 60 * 60 * 1000).toISOString() },
+  { id: '9', store: 'etsy' as const, product: 'Hand-painted art print', buyer: 'Jordan L.', amount: 52, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: '10', store: 'tiktok' as const, product: 'UV nail lamp', buyer: 'Zara H.', amount: 35.50, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 30 * 60 * 1000).toISOString() },
+  { id: '11', store: 'shopify' as const, product: 'Wireless charging pad', buyer: 'Marcus J.', amount: 49.99, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: '12', store: 'whatnot' as const, product: 'Collectible figurine', buyer: 'Riley V.', amount: 62, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString() },
+  { id: '13', store: 'ebay' as const, product: 'Vintage watch', buyer: 'Sophia B.', amount: 88.50, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: '14', store: 'amazon' as const, product: 'Portable projector', buyer: 'Aiden F.', amount: 124.99, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 15 * 60 * 1000).toISOString() },
+  { id: '15', store: 'etsy' as const, product: 'Macramé wall hanging', buyer: 'Bella C.', amount: 41, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString() },
+  { id: '16', store: 'tiktok' as const, product: 'LED strip lights', buyer: 'Tyler N.', amount: 32.75, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: '17', store: 'shopify' as const, product: 'Eco water bottle', buyer: 'Ivy Q.', amount: 27.00, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 20 * 60 * 1000).toISOString() },
+  { id: '18', store: 'whatnot' as const, product: 'Mystery box', buyer: 'Xavier E.', amount: 55.99, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 9 * 60 * 60 * 1000).toISOString() },
+].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) satisfies Order[]
 
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString)
