@@ -11,8 +11,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'StoreControl',
-        short_name: 'StoreControl',
+        name: 'ShopLens',
+        short_name: 'ShopLens',
         theme_color: '#0ea5e9',
         background_color: '#ffffff',
         display: 'standalone',

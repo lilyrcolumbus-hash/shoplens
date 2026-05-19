@@ -1,18 +1,14 @@
-import { useState } from 'react'
-import { Bell } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Bell, Search, Link2, Link2Off, RefreshCw } from 'lucide-react'
+import {
+  type Order,
+  isConnected as isEtsyConnected,
+  fetchEtsyOrders,
+  connectEtsy,
+  clearTokens,
+} from './lib/etsy'
 
-type Store = 'etsy' | 'amazon' | 'tiktok' | 'whatnot' | 'shopify' | 'ebay'
-
-interface Order {
-  id: string
-  store: Store
-  product: string
-  buyer: string
-  amount: number
-  currency: string
-  status: 'new' | 'shipped' | 'delivered'
-  createdAt: string
-}
+type Store = Order['store']
 
 const STORE_META: Record<Store, { label: string; color: string; emoji: string }> = {
   etsy:    { label: 'Etsy',    color: 'bg-orange-100 text-orange-700 border-orange-200', emoji: '🧵' },
@@ -24,26 +20,25 @@ const STORE_META: Record<Store, { label: string; color: string; emoji: string }>
 }
 
 const now = new Date()
-const MOCK_ORDERS = [
-  { id: '1', store: 'etsy' as const, product: 'Handmade ceramic mug', buyer: 'Sarah M.', amount: 34, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString() },
-  { id: '2', store: 'amazon' as const, product: 'Wireless earbuds', buyer: 'James K.', amount: 89.99, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString() },
-  { id: '3', store: 'etsy' as const, product: 'Vintage book set', buyer: 'Emma R.', amount: 45.50, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '4', store: 'tiktok' as const, product: 'Customized phone case', buyer: 'Lucas P.', amount: 28, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString() },
-  { id: '5', store: 'shopify' as const, product: 'Organic skincare bundle', buyer: 'Maya T.', amount: 72.00, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString() },
-  { id: '6', store: 'whatnot' as const, product: 'Limited edition poster', buyer: 'Noah D.', amount: 18.99, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '7', store: 'ebay' as const, product: 'Retro camera', buyer: 'Olivia S.', amount: 95.00, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 45 * 60 * 1000).toISOString() },
-  { id: '8', store: 'amazon' as const, product: 'Smart home hub', buyer: 'Chris W.', amount: 79.99, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 7 * 60 * 60 * 1000).toISOString() },
-  { id: '9', store: 'etsy' as const, product: 'Hand-painted art print', buyer: 'Jordan L.', amount: 52, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '10', store: 'tiktok' as const, product: 'UV nail lamp', buyer: 'Zara H.', amount: 35.50, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 30 * 60 * 1000).toISOString() },
-  { id: '11', store: 'shopify' as const, product: 'Wireless charging pad', buyer: 'Marcus J.', amount: 49.99, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '12', store: 'whatnot' as const, product: 'Collectible figurine', buyer: 'Riley V.', amount: 62, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString() },
-  { id: '13', store: 'ebay' as const, product: 'Vintage watch', buyer: 'Sophia B.', amount: 88.50, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '14', store: 'amazon' as const, product: 'Portable projector', buyer: 'Aiden F.', amount: 124.99, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 15 * 60 * 1000).toISOString() },
-  { id: '15', store: 'etsy' as const, product: 'Macramé wall hanging', buyer: 'Bella C.', amount: 41, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString() },
-  { id: '16', store: 'tiktok' as const, product: 'LED strip lights', buyer: 'Tyler N.', amount: 32.75, currency: 'USD', status: 'delivered' as const, createdAt: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '17', store: 'shopify' as const, product: 'Eco water bottle', buyer: 'Ivy Q.', amount: 27.00, currency: 'USD', status: 'new' as const, createdAt: new Date(now.getTime() - 20 * 60 * 1000).toISOString() },
-  { id: '18', store: 'whatnot' as const, product: 'Mystery box', buyer: 'Xavier E.', amount: 55.99, currency: 'USD', status: 'shipped' as const, createdAt: new Date(now.getTime() - 9 * 60 * 60 * 1000).toISOString() },
-].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) satisfies Order[]
+const MOCK_ORDERS: Order[] = [
+  // Non-Etsy mock orders (placeholder until APIs of other stores are connected)
+  { id: '2', store: 'amazon', product: 'Wireless earbuds', buyer: 'James K.', amount: 89.99, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString() },
+  { id: '4', store: 'tiktok', product: 'Customized phone case', buyer: 'Lucas P.', amount: 28, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString() },
+  { id: '5', store: 'shopify', product: 'Organic skincare bundle', buyer: 'Maya T.', amount: 72.00, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString() },
+  { id: '6', store: 'whatnot', product: 'Limited edition poster', buyer: 'Noah D.', amount: 18.99, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: '7', store: 'ebay', product: 'Retro camera', buyer: 'Olivia S.', amount: 95.00, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 45 * 60 * 1000).toISOString() },
+  { id: '8', store: 'amazon', product: 'Smart home hub', buyer: 'Chris W.', amount: 79.99, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 7 * 60 * 60 * 1000).toISOString() },
+  { id: '10', store: 'tiktok', product: 'UV nail lamp', buyer: 'Zara H.', amount: 35.50, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 30 * 60 * 1000).toISOString() },
+  { id: '11', store: 'shopify', product: 'Wireless charging pad', buyer: 'Marcus J.', amount: 49.99, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: '12', store: 'whatnot', product: 'Collectible figurine', buyer: 'Riley V.', amount: 62, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString() },
+  { id: '13', store: 'ebay', product: 'Vintage watch', buyer: 'Sophia B.', amount: 88.50, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString() },
+]
+
+const ETSY_FALLBACK_MOCKS: Order[] = [
+  { id: 'mock-etsy-1', store: 'etsy', product: '(demo) Handmade ceramic mug', buyer: 'Sarah M.', amount: 34, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString() },
+  { id: 'mock-etsy-2', store: 'etsy', product: '(demo) Vintage book set', buyer: 'Emma R.', amount: 45.50, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString() },
+  { id: 'mock-etsy-3', store: 'etsy', product: '(demo) Hand-painted art print', buyer: 'Jordan L.', amount: 52, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString() },
+]
 
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString)
@@ -51,24 +46,87 @@ function formatRelativeTime(dateString: string): string {
   const mins = Math.floor(diff / 60000)
   const hours = Math.floor(diff / 3600000)
   const days = Math.floor(diff / 86400000)
-
   if (mins < 1) return 'just now'
   if (mins < 60) return `${mins}m ago`
   if (hours < 24) return `${hours}h ago`
   return `${days}d ago`
 }
 
-function getStoreCount(store: Store): number {
-  return MOCK_ORDERS.filter(o => o.store === store).length
-}
-
 export default function App() {
   const [filter, setFilter] = useState<Store | 'all'>('all')
   const [notifEnabled, setNotifEnabled] = useState(false)
+  const [etsyConnected, setEtsyConnected] = useState<boolean>(() => isEtsyConnected())
+  const [etsyOrders, setEtsyOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const prevOrderIds = useRef<Set<string>>(new Set())
 
-  const filtered = filter === 'all' ? MOCK_ORDERS : MOCK_ORDERS.filter(o => o.store === filter)
+  const loadEtsy = useCallback(async (notifyOnNew = false) => {
+    if (!isEtsyConnected()) {
+      setEtsyOrders([])
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const orders = await fetchEtsyOrders()
+      // Detect new orders (not in previous set) and fire notifications
+      if (notifyOnNew && prevOrderIds.current.size > 0) {
+        const newOnes = orders.filter(o => !prevOrderIds.current.has(o.id))
+        for (const order of newOnes) {
+          if (Notification.permission === 'granted') {
+            new Notification('🧵 New Etsy order', {
+              body: `${order.buyer} bought "${order.product}" for $${order.amount.toFixed(2)}`,
+              badge: '/icon-512.png',
+            })
+          }
+        }
+      }
+      prevOrderIds.current = new Set(orders.map(o => o.id))
+      setEtsyOrders(orders)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error'
+      setError(msg)
+      if (msg === 'not_connected') {
+        setEtsyConnected(false)
+        clearTokens()
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadEtsy(false)
+    const interval = setInterval(() => loadEtsy(true), 5 * 60 * 1000) // poll every 5 min
+    return () => clearInterval(interval)
+  }, [loadEtsy])
+
+  // Re-check connection state when window regains focus (e.g., after OAuth redirect)
+  useEffect(() => {
+    function onFocus() {
+      const connected = isEtsyConnected()
+      if (connected !== etsyConnected) {
+        setEtsyConnected(connected)
+        if (connected) loadEtsy(false)
+      }
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [etsyConnected, loadEtsy])
+
+  const allOrders = [
+    ...(etsyConnected ? etsyOrders : ETSY_FALLBACK_MOCKS),
+    ...MOCK_ORDERS,
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  const filtered = filter === 'all' ? allOrders : allOrders.filter(o => o.store === filter)
   const totalRevenue = filtered.reduce((sum, o) => sum + o.amount, 0)
   const newCount = filtered.filter(o => o.status === 'new').length
+
+  function getStoreCount(store: Store): number {
+    return allOrders.filter(o => o.store === store).length
+  }
 
   async function enableNotifications() {
     if (!('Notification' in window)) {
@@ -78,42 +136,39 @@ export default function App() {
     const perm = await Notification.requestPermission()
     if (perm === 'granted') {
       setNotifEnabled(true)
-      new Notification('StoreControl ready', {
+      new Notification('ShopLens ready', {
         body: 'You will be notified when new orders arrive',
         badge: '/icon-512.png',
       })
     }
   }
 
-  function testNotification() {
-    if (!notifEnabled) {
-      alert('Enable notifications first')
-      return
+  function handleDisconnectEtsy() {
+    if (confirm('Disconnect Etsy? You will need to re-authorize to fetch orders again.')) {
+      clearTokens()
+      setEtsyConnected(false)
+      setEtsyOrders([])
     }
-    new Notification('🛍️ New Etsy order', {
-      body: 'Sarah M. bought "Handmade ceramic mug" for $34.00',
-      badge: '/icon-512.png',
-    })
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {/* Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center text-white font-bold text-lg">
-              S
+            <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center text-white">
+              <Search size={22} strokeWidth={2.5} />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">StoreControl</h1>
+            <h1 className="text-2xl font-bold text-gray-900">ShopLens</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={testNotification}
-              disabled={!notifEnabled}
-              className="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+              onClick={() => loadEtsy(false)}
+              disabled={!etsyConnected || loading}
+              className="p-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              title="Refresh Etsy orders"
             >
-              Test
+              <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
             </button>
             <button
               onClick={enableNotifications}
@@ -131,7 +186,43 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Cards */}
+        {/* Etsy connection banner */}
+        {!etsyConnected ? (
+          <div className="mb-6 bg-orange-50 border border-orange-200 rounded-2xl p-5 flex items-center justify-between gap-4">
+            <div>
+              <p className="font-semibold text-orange-900">Connect your Etsy shop</p>
+              <p className="text-sm text-orange-700 mt-1">
+                Showing demo data. Connect <span className="font-medium">LaPappa</span> to see real orders.
+              </p>
+            </div>
+            <button
+              onClick={connectEtsy}
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition flex items-center gap-2 whitespace-nowrap"
+            >
+              <Link2 size={16} /> Connect Etsy
+            </button>
+          </div>
+        ) : (
+          <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+            <p className="text-sm text-emerald-800">
+              <span className="font-semibold">✓ Etsy connected</span> — {etsyOrders.length} order{etsyOrders.length === 1 ? '' : 's'} from LaPappa
+              {loading && ' (refreshing...)'}
+            </p>
+            <button
+              onClick={handleDisconnectEtsy}
+              className="text-sm text-emerald-700 hover:text-emerald-900 flex items-center gap-1"
+            >
+              <Link2Off size={14} /> Disconnect
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-4">
+            <p className="text-sm text-red-800">Error fetching Etsy: {error}</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
             <p className="text-sm font-medium text-gray-600 mb-2">Total Orders</p>
@@ -147,7 +238,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Filter Chips */}
         <div className="mb-8 flex flex-wrap gap-2">
           <button
             onClick={() => setFilter('all')}
@@ -157,7 +247,7 @@ export default function App() {
                 : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
             }`}
           >
-            All ({MOCK_ORDERS.length})
+            All ({allOrders.length})
           </button>
           {(Object.keys(STORE_META) as Store[]).map(store => (
             <button
@@ -174,7 +264,6 @@ export default function App() {
           ))}
         </div>
 
-        {/* Orders List */}
         {filtered.length === 0 ? (
           <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
             <p className="text-gray-500 text-lg">No orders found</p>

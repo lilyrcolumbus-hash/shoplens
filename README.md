@@ -1,6 +1,6 @@
-# StoreControl
+# ShopLens
 
-Unified multi-store order dashboard with push notifications. Monitor orders from Etsy, Amazon, TikTok, Whatnot, Shopify, and eBay in one place.
+Unified multi-store dashboard with push notifications and cross-channel performance tracking. View orders and analytics from Etsy, Amazon, TikTok Shop, Whatnot, Shopify, and eBay in one place.
 
 ## Quick Start
 
@@ -40,7 +40,7 @@ npm run preview
 - [ ] Replace mock orders with real Etsy API integration
 - [ ] Add other store API connections (Amazon, TikTok, etc.)
 - [ ] Persist order data with backend
-- [ ] Real-time order sync with WebSocket or polling
+- [ ] Cross-channel performance dashboard
 - [ ] Custom notification preferences
 
 ## Icon
