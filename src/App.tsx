@@ -17,7 +17,6 @@ const STORE_META: Record<Store, { label: string; color: string; emoji: string; c
   amazon:  { label: 'Amazon',  color: 'bg-amber-500/15 text-amber-300 border-amber-500/30', emoji: '📦', conn: 'api_pending' },
   tiktok:  { label: 'TikTok',  color: 'bg-pink-500/15 text-pink-300 border-pink-500/30', emoji: '🎵', conn: 'api_pending' },
   whatnot: { label: 'Whatnot', color: 'bg-slate-500/15 text-slate-300 border-slate-500/30', emoji: '🎯', conn: 'no_api' },
-  shopify: { label: 'Shopify', color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', emoji: '🛍️', conn: 'available' },
 }
 
 const CONN_LABEL: Record<ConnState, string> = {
@@ -219,7 +218,7 @@ export default function App() {
         {/* Store connections */}
         <section className="mb-8">
           <h2 className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Stores</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {(Object.keys(STORE_META) as Store[]).map((store, i) => {
               const meta = STORE_META[store]
               const connected = store === 'etsy' && etsyConnected
@@ -278,7 +277,9 @@ export default function App() {
           </div>
           <div className="glass glass-glow p-6 animate-slide-up" style={{ animationDelay: '260ms' }}>
             <p className="text-sm font-medium text-white/45 mb-2">Revenue</p>
-            <p className="text-4xl font-extrabold metric-gold">${animatedRevenue.toFixed(2)}</p>
+            <p className={`text-4xl font-extrabold tabular-nums tracking-tight ${totalRevenue > 0 ? 'metric-gold' : 'text-white/30'}`}>
+              ${animatedRevenue.toFixed(2)}
+            </p>
           </div>
         </div>
 
@@ -358,28 +359,28 @@ export default function App() {
               return (
                 <div
                   key={order.id}
-                  className="glass glass-glow pressable animate-slide-up p-4 flex items-center justify-between gap-4"
+                  className="glass glass-glow pressable animate-slide-up p-4"
                   style={{ animationDelay: `${Math.min(i, 8) * 60}ms` }}
                 >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className={`px-3 py-2 rounded-lg border ${meta.color} font-medium text-sm whitespace-nowrap`}>
+                  {/* Line 1: store chip + product + status */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`px-2 py-1 rounded-lg border ${meta.color} font-medium text-xs whitespace-nowrap shrink-0`}>
                       {meta.emoji} {meta.label}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-white truncate">{order.product}</p>
-                      <p className="text-sm text-white/45">{order.buyer}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
-                      <p className="font-bold text-white tabular-nums">${order.amount.toFixed(2)}</p>
-                      <p className="text-xs text-white/40">{formatRelativeTime(order.createdAt)}</p>
-                    </div>
+                    </span>
+                    <p className="font-semibold text-white truncate flex-1 min-w-0">{order.product}</p>
                     <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold border whitespace-nowrap ${st.cls} ${st.sonar ? 'sonar' : ''}`}
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap shrink-0 ${st.cls} ${st.sonar ? 'sonar' : ''}`}
                     >
                       {st.label}
                     </span>
+                  </div>
+                  {/* Line 2: buyer + price + time */}
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm text-white/45 truncate min-w-0">{order.buyer}</p>
+                    <p className="text-sm whitespace-nowrap shrink-0">
+                      <span className="font-bold text-white tabular-nums">${order.amount.toFixed(2)}</span>
+                      <span className="text-white/35 ml-2">{formatRelativeTime(order.createdAt)}</span>
+                    </p>
                   </div>
                 </div>
               )

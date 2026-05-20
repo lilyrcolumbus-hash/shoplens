@@ -19,6 +19,8 @@
 
 html {
   background: var(--bg);
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 body {
@@ -27,6 +29,7 @@ body {
   color: var(--text);
   position: relative;
   overflow-x: hidden;
+  max-width: 100%;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }

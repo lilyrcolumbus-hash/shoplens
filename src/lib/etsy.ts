@@ -10,7 +10,7 @@ export interface EtsyTokens {
 
 export interface Order {
   id: string
-  store: 'etsy' | 'amazon' | 'tiktok' | 'whatnot' | 'shopify'
+  store: 'etsy' | 'amazon' | 'tiktok' | 'whatnot'
   product: string
   buyer: string
   amount: number
