@@ -55,6 +55,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
 
   const data = await etsyResp.json() as { count: number; results: EtsyReceipt[] }
 
+  function mapStatus(r: EtsyReceipt): 'unshipped' | 'shipped' | 'completed' | 'canceled' {
+    const s = (r.status || '').toLowerCase()
+    if (s === 'canceled' || s.includes('refund')) return 'canceled'
+    if (s === 'completed') return 'completed'
+    if (r.is_shipped) return 'shipped'
+    return 'unshipped'
+  }
+
   const orders = data.results.map(r => {
     const totalAmount = r.grandtotal.amount / r.grandtotal.divisor
     const productTitle = r.transactions[0]?.title ?? 'Unknown product'
@@ -66,7 +74,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
       buyer: r.name,
       amount: totalAmount,
       currency: r.grandtotal.currency_code,
-      status: r.is_shipped ? 'shipped' as const : 'new' as const,
+      status: mapStatus(r),
       createdAt: new Date(r.created_timestamp * 1000).toISOString(),
     }
   })

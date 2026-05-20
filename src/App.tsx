@@ -108,7 +108,7 @@ export default function App() {
 
   const filtered = filter === 'all' ? allOrders : allOrders.filter(o => o.store === filter)
   const totalRevenue = filtered.reduce((sum, o) => sum + o.amount, 0)
-  const newCount = filtered.filter(o => o.status === 'new').length
+  const toShipCount = filtered.filter(o => o.status === 'unshipped').length
   const anyStoreConnected = etsyConnected
 
   function getStoreCount(store: Store): number {
@@ -228,8 +228,8 @@ export default function App() {
             <p className="text-3xl font-bold text-gray-900">{filtered.length}</p>
           </div>
           <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-            <p className="text-sm font-medium text-gray-600 mb-2">New Orders</p>
-            <p className="text-3xl font-bold text-orange-600">{newCount}</p>
+            <p className="text-sm font-medium text-gray-600 mb-2">To Ship</p>
+            <p className="text-3xl font-bold text-orange-600">{toShipCount}</p>
           </div>
           <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
             <p className="text-sm font-medium text-gray-600 mb-2">Revenue</p>
@@ -298,9 +298,16 @@ export default function App() {
             {filtered.map(order => {
               const meta = STORE_META[order.store]
               const statusColors = {
-                new: 'bg-blue-100 text-blue-700 border-blue-200',
+                unshipped: 'bg-orange-100 text-orange-700 border-orange-200',
                 shipped: 'bg-amber-100 text-amber-700 border-amber-200',
-                delivered: 'bg-green-100 text-green-700 border-green-200',
+                completed: 'bg-green-100 text-green-700 border-green-200',
+                canceled: 'bg-gray-100 text-gray-500 border-gray-200',
+              }
+              const statusLabels = {
+                unshipped: 'To ship',
+                shipped: 'Shipped',
+                completed: 'Completed',
+                canceled: 'Canceled',
               }
               return (
                 <div
@@ -322,7 +329,7 @@ export default function App() {
                       <p className="text-xs text-gray-500">{formatRelativeTime(order.createdAt)}</p>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${statusColors[order.status]}`}>
-                      {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                      {statusLabels[order.status]}
                     </span>
                   </div>
                 </div>

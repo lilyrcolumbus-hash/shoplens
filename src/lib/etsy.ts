@@ -15,7 +15,7 @@ export interface Order {
   buyer: string
   amount: number
   currency: string
-  status: 'new' | 'shipped' | 'delivered'
+  status: 'unshipped' | 'shipped' | 'completed' | 'canceled'
   createdAt: string
 }
 
