@@ -5,6 +5,7 @@
 
 interface Env {
   ETSY_KEYSTRING: string
+  ETSY_SHARED_SECRET: string
   ETSY_SHOP_ID: string
 }
 
@@ -39,7 +40,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
     `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/receipts?${params}`,
     {
       headers: {
-        'x-api-key': env.ETSY_KEYSTRING,
+        'x-api-key': `${env.ETSY_KEYSTRING}:${env.ETSY_SHARED_SECRET}`,
         'Authorization': `Bearer ${accessToken}`,
       },
     },
