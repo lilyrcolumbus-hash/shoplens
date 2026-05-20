@@ -30,6 +30,9 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         cleanupOutdatedCaches: true,
+        // Don't let the SPA fallback swallow API routes — OAuth redirects
+        // (302 to Etsy and the /callback return) must hit the network.
+        navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],
