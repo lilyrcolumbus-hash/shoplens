@@ -12,11 +12,11 @@ type Store = Order['store']
 type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
 
 const STORE_META: Record<Store, { label: string; color: string; emoji: string; conn: ConnState }> = {
-  etsy:    { label: 'Etsy',    color: 'bg-orange-100 text-orange-700 border-orange-200', emoji: '🧵', conn: 'connectable' },
-  amazon:  { label: 'Amazon',  color: 'bg-yellow-100 text-yellow-800 border-yellow-200', emoji: '📦', conn: 'api_pending' },
-  tiktok:  { label: 'TikTok',  color: 'bg-pink-100 text-pink-700 border-pink-200', emoji: '🎵', conn: 'api_pending' },
-  whatnot: { label: 'Whatnot', color: 'bg-purple-100 text-purple-700 border-purple-200', emoji: '🎯', conn: 'no_api' },
-  shopify: { label: 'Shopify', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', emoji: '🛍️', conn: 'available' },
+  etsy:    { label: 'Etsy',    color: 'bg-orange-500/15 text-orange-300 border-orange-500/30', emoji: '🧵', conn: 'connectable' },
+  amazon:  { label: 'Amazon',  color: 'bg-amber-500/15 text-amber-300 border-amber-500/30', emoji: '📦', conn: 'api_pending' },
+  tiktok:  { label: 'TikTok',  color: 'bg-pink-500/15 text-pink-300 border-pink-500/30', emoji: '🎵', conn: 'api_pending' },
+  whatnot: { label: 'Whatnot', color: 'bg-slate-500/15 text-slate-300 border-slate-500/30', emoji: '🎯', conn: 'no_api' },
+  shopify: { label: 'Shopify', color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', emoji: '🛍️', conn: 'available' },
 }
 
 const CONN_LABEL: Record<ConnState, string> = {
@@ -36,6 +36,33 @@ function formatRelativeTime(dateString: string): string {
   if (mins < 60) return `${mins}m ago`
   if (hours < 24) return `${hours}h ago`
   return `${days}d ago`
+}
+
+// Animated count-up (easeOutCubic) for the revenue ticker.
+function useCountUp(target: number, duration = 1200): number {
+  const [value, setValue] = useState(0)
+  const rafRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    const start = performance.now()
+    function tick(now: number) {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - Math.pow(1 - t, 3)
+      setValue(target * eased)
+      if (t < 1) rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [target, duration])
+  return value
+}
+
+const STATUS_STYLE: Record<Order['status'], { label: string; cls: string; sonar?: boolean }> = {
+  unshipped: { label: 'To ship', cls: 'text-[#00e676] border-[#00e676]/40 bg-[#00e676]/12', sonar: true },
+  shipped:   { label: 'Shipped', cls: 'text-[#f5a623] border-[#f5a623]/40 bg-[#f5a623]/12' },
+  completed: { label: 'Completed', cls: 'text-[#00d4c8] border-[#00d4c8]/40 bg-[#00d4c8]/12' },
+  canceled:  { label: 'Canceled', cls: 'text-[#ff4757] border-[#ff4757]/40 bg-[#ff4757]/12' },
 }
 
 export default function App() {
@@ -113,6 +140,7 @@ export default function App() {
     .reduce((sum, o) => sum + o.amount, 0)
   const toShipCount = filtered.filter(o => o.status === 'unshipped').length
   const anyStoreConnected = etsyConnected
+  const animatedRevenue = useCountUp(totalRevenue)
 
   function getStoreCount(store: Store): number {
     return allOrders.filter(o => o.store === store).length
@@ -143,31 +171,36 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen">
       <header
-        className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm"
-        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+        className="sticky top-0 z-50 border-b border-white/[0.06]"
+        style={{
+          paddingTop: 'env(safe-area-inset-top)',
+          background: 'rgba(8,8,8,0.7)',
+          backdropFilter: 'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center text-white">
-              <Search size={22} strokeWidth={2.5} />
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-black bg-gradient-to-br from-[#ffb800] to-[#00d4c8]">
+              <Search size={22} strokeWidth={2.75} />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">ShopLens</h1>
+            <h1 className="text-2xl font-bold text-white tracking-tight">ShopLens</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => loadEtsy(false)}
               disabled={!etsyConnected || loading}
-              className="w-11 h-11 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/[0.06] text-white/70 hover:bg-white/10 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition"
               title="Refresh orders"
             >
               <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
             </button>
             <button
               onClick={enableNotifications}
-              className={`w-11 h-11 flex items-center justify-center rounded-lg active:scale-95 transition ${
-                notifEnabled ? 'bg-sky-100 text-sky-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              className={`w-11 h-11 flex items-center justify-center rounded-xl active:scale-95 transition ${
+                notifEnabled ? 'bg-[#00d4c8]/15 text-[#00d4c8]' : 'bg-white/[0.06] text-white/70 hover:bg-white/10'
               }`}
               title={notifEnabled ? 'Notifications enabled' : 'Enable notifications'}
             >
@@ -178,28 +211,29 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Store connections — honest status per store */}
+        {/* Store connections */}
         <section className="mb-8">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Stores</h2>
+          <h2 className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Stores</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {(Object.keys(STORE_META) as Store[]).map(store => {
+            {(Object.keys(STORE_META) as Store[]).map((store, i) => {
               const meta = STORE_META[store]
               const connected = store === 'etsy' && etsyConnected
               return (
                 <div
                   key={store}
-                  className={`rounded-2xl border p-4 bg-white ${connected ? 'border-emerald-300' : 'border-gray-200'}`}
+                  className={`glass glass-glow pressable animate-slide-up p-4 ${connected ? 'ring-1 ring-[#00d4c8]/40' : ''}`}
+                  style={{ animationDelay: `${i * 70}ms` }}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xl">{meta.emoji}</span>
-                    <span className="font-semibold text-gray-900">{meta.label}</span>
+                    <span className="font-semibold text-white">{meta.label}</span>
                   </div>
                   {connected ? (
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-emerald-600">● Connected</span>
+                      <span className="text-sm font-medium text-[#00d4c8]">● Connected</span>
                       <button
                         onClick={handleDisconnectEtsy}
-                        className="w-9 h-9 -mr-1 flex items-center justify-center text-gray-500 hover:text-gray-700 active:scale-95"
+                        className="w-9 h-9 -mr-1 flex items-center justify-center text-white/40 hover:text-white/80 active:scale-95"
                         title="Disconnect"
                       >
                         <Link2Off size={16} />
@@ -208,12 +242,12 @@ export default function App() {
                   ) : meta.conn === 'connectable' ? (
                     <button
                       onClick={connectEtsy}
-                      className="w-full mt-1 px-3 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 active:scale-95 transition flex items-center justify-center gap-1.5"
+                      className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition flex items-center justify-center gap-1.5"
                     >
                       <Link2 size={16} /> Connect
                     </button>
                   ) : (
-                    <span className="text-sm text-gray-500">{CONN_LABEL[meta.conn]}</span>
+                    <span className="text-sm text-white/45">{CONN_LABEL[meta.conn]}</span>
                   )}
                 </div>
               )
@@ -222,34 +256,36 @@ export default function App() {
         </section>
 
         {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-4">
-            <p className="text-sm text-red-800">Error fetching orders: {error}</p>
+          <div className="mb-6 glass border border-[#ff4757]/30 p-4">
+            <p className="text-sm text-[#ff4757]">Error fetching orders: {error}</p>
           </div>
         )}
 
-        {/* Stats — real data only */}
+        {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-            <p className="text-sm font-medium text-gray-600 mb-2">Total Orders</p>
-            <p className="text-3xl font-bold text-gray-900">{filtered.length}</p>
+          <div className="glass glass-glow p-6 animate-slide-up" style={{ animationDelay: '120ms' }}>
+            <p className="text-sm font-medium text-white/45 mb-2">Total Orders</p>
+            <p className="text-4xl font-extrabold text-white tabular-nums tracking-tight">{filtered.length}</p>
           </div>
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-            <p className="text-sm font-medium text-gray-600 mb-2">To Ship</p>
-            <p className="text-3xl font-bold text-orange-600">{toShipCount}</p>
+          <div className="glass glass-glow p-6 animate-slide-up" style={{ animationDelay: '190ms' }}>
+            <p className="text-sm font-medium text-white/45 mb-2">To Ship</p>
+            <p className="text-4xl font-extrabold tabular-nums tracking-tight text-[#00e676]">{toShipCount}</p>
           </div>
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-            <p className="text-sm font-medium text-gray-600 mb-2">Revenue</p>
-            <p className="text-3xl font-bold text-gray-900">${totalRevenue.toFixed(2)}</p>
+          <div className="glass glass-glow p-6 animate-slide-up" style={{ animationDelay: '260ms' }}>
+            <p className="text-sm font-medium text-white/45 mb-2">Revenue</p>
+            <p className="text-4xl font-extrabold metric-gold">${animatedRevenue.toFixed(2)}</p>
           </div>
         </div>
 
-        {/* Filters — only show when there are orders */}
+        {/* Filters */}
         {allOrders.length > 0 && (
-          <div className="mb-8 flex flex-wrap gap-2">
+          <div className="mb-6 flex flex-wrap gap-2">
             <button
               onClick={() => setFilter('all')}
               className={`px-4 py-2.5 rounded-full font-medium transition text-sm active:scale-95 ${
-                filter === 'all' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                filter === 'all'
+                  ? 'bg-white text-black'
+                  : 'bg-white/[0.06] text-white/70 border border-white/10 hover:bg-white/10'
               }`}
             >
               All ({allOrders.length})
@@ -261,39 +297,49 @@ export default function App() {
                   key={store}
                   onClick={() => setFilter(store)}
                   className={`px-4 py-2.5 rounded-full font-medium transition text-sm flex items-center gap-1 active:scale-95 ${
-                    filter === store ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                    filter === store
+                      ? 'bg-white text-black'
+                      : 'bg-white/[0.06] text-white/70 border border-white/10 hover:bg-white/10'
                   }`}
                 >
                   {STORE_META[store].emoji} {STORE_META[store].label}{' '}
-                  <span className="text-xs opacity-70">({getStoreCount(store)})</span>
+                  <span className="text-xs opacity-60">({getStoreCount(store)})</span>
                 </button>
               ))}
           </div>
         )}
 
-        {/* Order list with honest empty states */}
+        {/* Order list */}
         {!anyStoreConnected ? (
-          <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
-            <Inbox className="mx-auto text-gray-300 mb-4" size={48} />
-            <p className="text-gray-900 font-semibold text-lg mb-1">No store connected</p>
-            <p className="text-gray-500 mb-6">Connect a store above to start seeing your real orders.</p>
+          <div className="glass glass-glow p-12 text-center">
+            <Inbox className="mx-auto text-white/20 mb-4" size={48} />
+            <p className="text-white font-semibold text-lg mb-1">No store connected</p>
+            <p className="text-white/45 mb-6">Connect a store above to start seeing your real orders.</p>
             <button
               onClick={connectEtsy}
-              className="px-5 py-2.5 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition inline-flex items-center gap-2"
+              className="px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center gap-2"
             >
               <Link2 size={16} /> Connect Etsy
             </button>
           </div>
         ) : loading && !hasLoaded ? (
-          <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
-            <RefreshCw className="mx-auto text-gray-300 mb-4 animate-spin" size={40} />
-            <p className="text-gray-500">Loading your orders...</p>
+          <div className="space-y-3">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="glass p-4 flex items-center gap-4">
+                <div className="shimmer w-16 h-9" />
+                <div className="flex-1 space-y-2">
+                  <div className="shimmer h-4 w-2/3" />
+                  <div className="shimmer h-3 w-1/3" />
+                </div>
+                <div className="shimmer h-6 w-16" />
+              </div>
+            ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
-            <Inbox className="mx-auto text-gray-300 mb-4" size={48} />
-            <p className="text-gray-900 font-semibold text-lg mb-1">No orders yet</p>
-            <p className="text-gray-500">
+          <div className="glass glass-glow p-12 text-center">
+            <Inbox className="mx-auto text-white/20 mb-4" size={48} />
+            <p className="text-white font-semibold text-lg mb-1">No orders yet</p>
+            <p className="text-white/45">
               {filter === 'all'
                 ? 'Your connected store has no orders to show right now.'
                 : `No ${STORE_META[filter as Store].label} orders.`}
@@ -301,41 +347,33 @@ export default function App() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filtered.map(order => {
+            {filtered.map((order, i) => {
               const meta = STORE_META[order.store]
-              const statusColors = {
-                unshipped: 'bg-orange-100 text-orange-700 border-orange-200',
-                shipped: 'bg-amber-100 text-amber-700 border-amber-200',
-                completed: 'bg-green-100 text-green-700 border-green-200',
-                canceled: 'bg-gray-100 text-gray-500 border-gray-200',
-              }
-              const statusLabels = {
-                unshipped: 'To ship',
-                shipped: 'Shipped',
-                completed: 'Completed',
-                canceled: 'Canceled',
-              }
+              const st = STATUS_STYLE[order.status]
               return (
                 <div
                   key={order.id}
-                  className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition flex items-center justify-between gap-4"
+                  className="glass glass-glow pressable animate-slide-up p-4 flex items-center justify-between gap-4"
+                  style={{ animationDelay: `${Math.min(i, 8) * 60}ms` }}
                 >
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className={`px-3 py-2 rounded-lg border ${meta.color} font-medium text-sm whitespace-nowrap`}>
                       {meta.emoji} {meta.label}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-900 truncate">{order.product}</p>
-                      <p className="text-sm text-gray-600">{order.buyer}</p>
+                      <p className="font-semibold text-white truncate">{order.product}</p>
+                      <p className="text-sm text-white/45">{order.buyer}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right">
-                      <p className="font-bold text-gray-900">${order.amount.toFixed(2)}</p>
-                      <p className="text-xs text-gray-600">{formatRelativeTime(order.createdAt)}</p>
+                      <p className="font-bold text-white tabular-nums">${order.amount.toFixed(2)}</p>
+                      <p className="text-xs text-white/40">{formatRelativeTime(order.createdAt)}</p>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${statusColors[order.status]}`}>
-                      {statusLabels[order.status]}
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold border whitespace-nowrap ${st.cls} ${st.sonar ? 'sonar' : ''}`}
+                    >
+                      {st.label}
                     </span>
                   </div>
                 </div>

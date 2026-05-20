@@ -14,8 +14,8 @@ export default defineConfig({
       manifest: {
         name: 'ShopLens',
         short_name: 'ShopLens',
-        theme_color: '#0ea5e9',
-        background_color: '#ffffff',
+        theme_color: '#080808',
+        background_color: '#080808',
         display: 'standalone',
         scope: '/',
         start_url: '/',
