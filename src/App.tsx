@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Bell, Search, Link2, Link2Off, RefreshCw } from 'lucide-react'
+import { Bell, Search, Link2, Link2Off, RefreshCw, Inbox } from 'lucide-react'
 import {
   type Order,
   isConnected as isEtsyConnected,
@@ -9,36 +9,23 @@ import {
 } from './lib/etsy'
 
 type Store = Order['store']
+type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
 
-const STORE_META: Record<Store, { label: string; color: string; emoji: string }> = {
-  etsy:    { label: 'Etsy',    color: 'bg-orange-100 text-orange-700 border-orange-200', emoji: '🧵' },
-  amazon:  { label: 'Amazon',  color: 'bg-yellow-100 text-yellow-800 border-yellow-200', emoji: '📦' },
-  tiktok:  { label: 'TikTok',  color: 'bg-pink-100 text-pink-700 border-pink-200', emoji: '🎵' },
-  whatnot: { label: 'Whatnot', color: 'bg-purple-100 text-purple-700 border-purple-200', emoji: '🎯' },
-  shopify: { label: 'Shopify', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', emoji: '🛍️' },
-  ebay:    { label: 'eBay',    color: 'bg-blue-100 text-blue-700 border-blue-200', emoji: '🔵' },
+const STORE_META: Record<Store, { label: string; color: string; emoji: string; conn: ConnState }> = {
+  etsy:    { label: 'Etsy',    color: 'bg-orange-100 text-orange-700 border-orange-200', emoji: '🧵', conn: 'connectable' },
+  amazon:  { label: 'Amazon',  color: 'bg-yellow-100 text-yellow-800 border-yellow-200', emoji: '📦', conn: 'api_pending' },
+  tiktok:  { label: 'TikTok',  color: 'bg-pink-100 text-pink-700 border-pink-200', emoji: '🎵', conn: 'api_pending' },
+  whatnot: { label: 'Whatnot', color: 'bg-purple-100 text-purple-700 border-purple-200', emoji: '🎯', conn: 'no_api' },
+  shopify: { label: 'Shopify', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', emoji: '🛍️', conn: 'available' },
+  ebay:    { label: 'eBay',    color: 'bg-blue-100 text-blue-700 border-blue-200', emoji: '🔵', conn: 'available' },
 }
 
-const now = new Date()
-const MOCK_ORDERS: Order[] = [
-  // Non-Etsy mock orders (placeholder until APIs of other stores are connected)
-  { id: '2', store: 'amazon', product: 'Wireless earbuds', buyer: 'James K.', amount: 89.99, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString() },
-  { id: '4', store: 'tiktok', product: 'Customized phone case', buyer: 'Lucas P.', amount: 28, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString() },
-  { id: '5', store: 'shopify', product: 'Organic skincare bundle', buyer: 'Maya T.', amount: 72.00, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString() },
-  { id: '6', store: 'whatnot', product: 'Limited edition poster', buyer: 'Noah D.', amount: 18.99, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '7', store: 'ebay', product: 'Retro camera', buyer: 'Olivia S.', amount: 95.00, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 45 * 60 * 1000).toISOString() },
-  { id: '8', store: 'amazon', product: 'Smart home hub', buyer: 'Chris W.', amount: 79.99, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 7 * 60 * 60 * 1000).toISOString() },
-  { id: '10', store: 'tiktok', product: 'UV nail lamp', buyer: 'Zara H.', amount: 35.50, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 30 * 60 * 1000).toISOString() },
-  { id: '11', store: 'shopify', product: 'Wireless charging pad', buyer: 'Marcus J.', amount: 49.99, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: '12', store: 'whatnot', product: 'Collectible figurine', buyer: 'Riley V.', amount: 62, currency: 'USD', status: 'shipped', createdAt: new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString() },
-  { id: '13', store: 'ebay', product: 'Vintage watch', buyer: 'Sophia B.', amount: 88.50, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString() },
-]
-
-const ETSY_FALLBACK_MOCKS: Order[] = [
-  { id: 'mock-etsy-1', store: 'etsy', product: '(demo) Handmade ceramic mug', buyer: 'Sarah M.', amount: 34, currency: 'USD', status: 'new', createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString() },
-  { id: 'mock-etsy-2', store: 'etsy', product: '(demo) Vintage book set', buyer: 'Emma R.', amount: 45.50, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: 'mock-etsy-3', store: 'etsy', product: '(demo) Hand-painted art print', buyer: 'Jordan L.', amount: 52, currency: 'USD', status: 'delivered', createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString() },
-]
+const CONN_LABEL: Record<ConnState, string> = {
+  connectable: 'Ready to connect',
+  available: 'API available — not set up',
+  api_pending: 'API approval pending',
+  no_api: 'No public API',
+}
 
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString)
@@ -58,6 +45,7 @@ export default function App() {
   const [etsyConnected, setEtsyConnected] = useState<boolean>(() => isEtsyConnected())
   const [etsyOrders, setEtsyOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const prevOrderIds = useRef<Set<string>>(new Set())
 
@@ -70,7 +58,6 @@ export default function App() {
     setError(null)
     try {
       const orders = await fetchEtsyOrders()
-      // Detect new orders (not in previous set) and fire notifications
       if (notifyOnNew && prevOrderIds.current.size > 0) {
         const newOnes = orders.filter(o => !prevOrderIds.current.has(o.id))
         for (const order of newOnes) {
@@ -93,16 +80,16 @@ export default function App() {
       }
     } finally {
       setLoading(false)
+      setHasLoaded(true)
     }
   }, [])
 
   useEffect(() => {
     loadEtsy(false)
-    const interval = setInterval(() => loadEtsy(true), 5 * 60 * 1000) // poll every 5 min
+    const interval = setInterval(() => loadEtsy(true), 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [loadEtsy])
 
-  // Re-check connection state when window regains focus (e.g., after OAuth redirect)
   useEffect(() => {
     function onFocus() {
       const connected = isEtsyConnected()
@@ -115,14 +102,15 @@ export default function App() {
     return () => window.removeEventListener('focus', onFocus)
   }, [etsyConnected, loadEtsy])
 
-  const allOrders = [
-    ...(etsyConnected ? etsyOrders : ETSY_FALLBACK_MOCKS),
-    ...MOCK_ORDERS,
-  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  // Only real data — no mocks.
+  const allOrders = [...etsyOrders].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  )
 
   const filtered = filter === 'all' ? allOrders : allOrders.filter(o => o.store === filter)
   const totalRevenue = filtered.reduce((sum, o) => sum + o.amount, 0)
   const newCount = filtered.filter(o => o.status === 'new').length
+  const anyStoreConnected = etsyConnected
 
   function getStoreCount(store: Store): number {
     return allOrders.filter(o => o.store === store).length
@@ -148,6 +136,7 @@ export default function App() {
       clearTokens()
       setEtsyConnected(false)
       setEtsyOrders([])
+      prevOrderIds.current = new Set()
     }
   }
 
@@ -166,16 +155,14 @@ export default function App() {
               onClick={() => loadEtsy(false)}
               disabled={!etsyConnected || loading}
               className="p-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
-              title="Refresh Etsy orders"
+              title="Refresh orders"
             >
               <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
             </button>
             <button
               onClick={enableNotifications}
               className={`p-2 rounded-lg transition ${
-                notifEnabled
-                  ? 'bg-sky-100 text-sky-600'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                notifEnabled ? 'bg-sky-100 text-sky-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
               title={notifEnabled ? 'Notifications enabled' : 'Enable notifications'}
             >
@@ -186,43 +173,56 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Etsy connection banner */}
-        {!etsyConnected ? (
-          <div className="mb-6 bg-orange-50 border border-orange-200 rounded-2xl p-5 flex items-center justify-between gap-4">
-            <div>
-              <p className="font-semibold text-orange-900">Connect your Etsy shop</p>
-              <p className="text-sm text-orange-700 mt-1">
-                Showing demo data. Connect <span className="font-medium">LaPappa</span> to see real orders.
-              </p>
-            </div>
-            <button
-              onClick={connectEtsy}
-              className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition flex items-center gap-2 whitespace-nowrap"
-            >
-              <Link2 size={16} /> Connect Etsy
-            </button>
+        {/* Store connections — honest status per store */}
+        <section className="mb-8">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Stores</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {(Object.keys(STORE_META) as Store[]).map(store => {
+              const meta = STORE_META[store]
+              const connected = store === 'etsy' && etsyConnected
+              return (
+                <div
+                  key={store}
+                  className={`rounded-2xl border p-4 bg-white ${connected ? 'border-emerald-300' : 'border-gray-200'}`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xl">{meta.emoji}</span>
+                    <span className="font-semibold text-gray-900">{meta.label}</span>
+                  </div>
+                  {connected ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-emerald-600">● Connected</span>
+                      <button
+                        onClick={handleDisconnectEtsy}
+                        className="text-gray-400 hover:text-gray-600"
+                        title="Disconnect"
+                      >
+                        <Link2Off size={14} />
+                      </button>
+                    </div>
+                  ) : meta.conn === 'connectable' ? (
+                    <button
+                      onClick={connectEtsy}
+                      className="w-full mt-1 px-3 py-1.5 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 transition flex items-center justify-center gap-1.5"
+                    >
+                      <Link2 size={14} /> Connect
+                    </button>
+                  ) : (
+                    <span className="text-xs text-gray-400">{CONN_LABEL[meta.conn]}</span>
+                  )}
+                </div>
+              )
+            })}
           </div>
-        ) : (
-          <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between gap-4">
-            <p className="text-sm text-emerald-800">
-              <span className="font-semibold">✓ Etsy connected</span> — {etsyOrders.length} order{etsyOrders.length === 1 ? '' : 's'} from LaPappa
-              {loading && ' (refreshing...)'}
-            </p>
-            <button
-              onClick={handleDisconnectEtsy}
-              className="text-sm text-emerald-700 hover:text-emerald-900 flex items-center gap-1"
-            >
-              <Link2Off size={14} /> Disconnect
-            </button>
-          </div>
-        )}
+        </section>
 
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-4">
-            <p className="text-sm text-red-800">Error fetching Etsy: {error}</p>
+            <p className="text-sm text-red-800">Error fetching orders: {error}</p>
           </div>
         )}
 
+        {/* Stats — real data only */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
             <p className="text-sm font-medium text-gray-600 mb-2">Total Orders</p>
@@ -238,35 +238,61 @@ export default function App() {
           </div>
         </div>
 
-        <div className="mb-8 flex flex-wrap gap-2">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-full font-medium transition text-sm ${
-              filter === 'all'
-                ? 'bg-gray-900 text-white'
-                : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-            }`}
-          >
-            All ({allOrders.length})
-          </button>
-          {(Object.keys(STORE_META) as Store[]).map(store => (
+        {/* Filters — only show when there are orders */}
+        {allOrders.length > 0 && (
+          <div className="mb-8 flex flex-wrap gap-2">
             <button
-              key={store}
-              onClick={() => setFilter(store)}
-              className={`px-4 py-2 rounded-full font-medium transition text-sm flex items-center gap-1 ${
-                filter === store
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+              onClick={() => setFilter('all')}
+              className={`px-4 py-2 rounded-full font-medium transition text-sm ${
+                filter === 'all' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
               }`}
             >
-              {STORE_META[store].emoji} {STORE_META[store].label} <span className="text-xs opacity-70">({getStoreCount(store)})</span>
+              All ({allOrders.length})
             </button>
-          ))}
-        </div>
+            {(Object.keys(STORE_META) as Store[])
+              .filter(store => getStoreCount(store) > 0)
+              .map(store => (
+                <button
+                  key={store}
+                  onClick={() => setFilter(store)}
+                  className={`px-4 py-2 rounded-full font-medium transition text-sm flex items-center gap-1 ${
+                    filter === store ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {STORE_META[store].emoji} {STORE_META[store].label}{' '}
+                  <span className="text-xs opacity-70">({getStoreCount(store)})</span>
+                </button>
+              ))}
+          </div>
+        )}
 
-        {filtered.length === 0 ? (
+        {/* Order list with honest empty states */}
+        {!anyStoreConnected ? (
           <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
-            <p className="text-gray-500 text-lg">No orders found</p>
+            <Inbox className="mx-auto text-gray-300 mb-4" size={48} />
+            <p className="text-gray-900 font-semibold text-lg mb-1">No store connected</p>
+            <p className="text-gray-500 mb-6">Connect a store above to start seeing your real orders.</p>
+            <button
+              onClick={connectEtsy}
+              className="px-5 py-2.5 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition inline-flex items-center gap-2"
+            >
+              <Link2 size={16} /> Connect Etsy
+            </button>
+          </div>
+        ) : loading && !hasLoaded ? (
+          <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
+            <RefreshCw className="mx-auto text-gray-300 mb-4 animate-spin" size={40} />
+            <p className="text-gray-500">Loading your orders...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
+            <Inbox className="mx-auto text-gray-300 mb-4" size={48} />
+            <p className="text-gray-900 font-semibold text-lg mb-1">No orders yet</p>
+            <p className="text-gray-500">
+              {filter === 'all'
+                ? 'Your connected store has no orders to show right now.'
+                : `No ${STORE_META[filter as Store].label} orders.`}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
