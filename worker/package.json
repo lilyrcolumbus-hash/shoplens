@@ -1,0 +1,15 @@
+{
+  "name": "shoplens-push",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@block65/webcrypto-web-push": "^1.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.93.0"
+  }
+}

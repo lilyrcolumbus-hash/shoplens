@@ -7,6 +7,7 @@ import {
   connectEtsy,
   clearTokens,
 } from './lib/etsy'
+import { enablePush, isPushEnabled, sendTestPush } from './lib/push'
 
 type Store = Order['store']
 type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
@@ -128,6 +129,10 @@ export default function App() {
     return () => window.removeEventListener('focus', onFocus)
   }, [etsyConnected, loadEtsy])
 
+  useEffect(() => {
+    isPushEnabled().then(setNotifEnabled)
+  }, [])
+
   // Only real data — no mocks.
   const allOrders = [...etsyOrders].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -146,18 +151,18 @@ export default function App() {
     return allOrders.filter(o => o.store === store).length
   }
 
-  async function enableNotifications() {
-    if (!('Notification' in window)) {
-      alert('Notifications not supported on this device')
+  async function handleEnablePush() {
+    if (notifEnabled) {
+      const ok = await sendTestPush()
+      alert(ok ? 'Test notification sent 🔔' : 'Could not send test — try again.')
       return
     }
-    const perm = await Notification.requestPermission()
-    if (perm === 'granted') {
+    const res = await enablePush()
+    if (res.ok) {
       setNotifEnabled(true)
-      new Notification('ShopLens ready', {
-        body: 'You will be notified when new orders arrive',
-        badge: '/icon-512.png',
-      })
+      await sendTestPush()
+    } else {
+      alert(res.error ?? 'Could not enable notifications')
     }
   }
 
@@ -198,11 +203,11 @@ export default function App() {
               <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
             </button>
             <button
-              onClick={enableNotifications}
+              onClick={handleEnablePush}
               className={`w-11 h-11 flex items-center justify-center rounded-xl active:scale-95 transition ${
                 notifEnabled ? 'bg-[#00d4c8]/15 text-[#00d4c8]' : 'bg-white/[0.06] text-white/70 hover:bg-white/10'
               }`}
-              title={notifEnabled ? 'Notifications enabled' : 'Enable notifications'}
+              title={notifEnabled ? 'Notifications on — tap to test' : 'Enable notifications'}
             >
               <Bell size={20} />
             </button>

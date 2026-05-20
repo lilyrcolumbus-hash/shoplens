@@ -9,6 +9,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       injectRegister: false,
       manifest: {
@@ -28,12 +31,8 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        cleanupOutdatedCaches: true,
-        // Don't let the SPA fallback swallow API routes — OAuth redirects
-        // (302 to Etsy and the /callback return) must hit the network.
-        navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],

@@ -1,0 +1,13 @@
+{
+  "name": "shoplens-push",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [
+    { "binding": "PUSH_KV", "id": "44f7b573c9c64ac0b6521ce8986d65a5" }
+  ],
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
+  "observability": { "enabled": true }
+}
