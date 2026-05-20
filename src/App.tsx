@@ -107,7 +107,10 @@ export default function App() {
   )
 
   const filtered = filter === 'all' ? allOrders : allOrders.filter(o => o.store === filter)
-  const totalRevenue = filtered.reduce((sum, o) => sum + o.amount, 0)
+  // Revenue excludes canceled/refunded orders — those aren't real income.
+  const totalRevenue = filtered
+    .filter(o => o.status !== 'canceled')
+    .reduce((sum, o) => sum + o.amount, 0)
   const toShipCount = filtered.filter(o => o.status === 'unshipped').length
   const anyStoreConnected = etsyConnected
 
