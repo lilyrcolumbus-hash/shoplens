@@ -141,8 +141,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <header className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+      <header
+        className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm"
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center text-white">
               <Search size={22} strokeWidth={2.5} />
@@ -153,14 +156,14 @@ export default function App() {
             <button
               onClick={() => loadEtsy(false)}
               disabled={!etsyConnected || loading}
-              className="p-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              className="w-11 h-11 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition"
               title="Refresh orders"
             >
               <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
             </button>
             <button
               onClick={enableNotifications}
-              className={`p-2 rounded-lg transition ${
+              className={`w-11 h-11 flex items-center justify-center rounded-lg active:scale-95 transition ${
                 notifEnabled ? 'bg-sky-100 text-sky-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
               title={notifEnabled ? 'Notifications enabled' : 'Enable notifications'}
@@ -175,7 +178,7 @@ export default function App() {
         {/* Store connections — honest status per store */}
         <section className="mb-8">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Stores</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {(Object.keys(STORE_META) as Store[]).map(store => {
               const meta = STORE_META[store]
               const connected = store === 'etsy' && etsyConnected
@@ -190,24 +193,24 @@ export default function App() {
                   </div>
                   {connected ? (
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-emerald-600">● Connected</span>
+                      <span className="text-sm font-medium text-emerald-600">● Connected</span>
                       <button
                         onClick={handleDisconnectEtsy}
-                        className="text-gray-400 hover:text-gray-600"
+                        className="w-9 h-9 -mr-1 flex items-center justify-center text-gray-500 hover:text-gray-700 active:scale-95"
                         title="Disconnect"
                       >
-                        <Link2Off size={14} />
+                        <Link2Off size={16} />
                       </button>
                     </div>
                   ) : meta.conn === 'connectable' ? (
                     <button
                       onClick={connectEtsy}
-                      className="w-full mt-1 px-3 py-1.5 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 transition flex items-center justify-center gap-1.5"
+                      className="w-full mt-1 px-3 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 active:scale-95 transition flex items-center justify-center gap-1.5"
                     >
-                      <Link2 size={14} /> Connect
+                      <Link2 size={16} /> Connect
                     </button>
                   ) : (
-                    <span className="text-xs text-gray-400">{CONN_LABEL[meta.conn]}</span>
+                    <span className="text-sm text-gray-500">{CONN_LABEL[meta.conn]}</span>
                   )}
                 </div>
               )
@@ -242,7 +245,7 @@ export default function App() {
           <div className="mb-8 flex flex-wrap gap-2">
             <button
               onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-full font-medium transition text-sm ${
+              className={`px-4 py-2.5 rounded-full font-medium transition text-sm active:scale-95 ${
                 filter === 'all' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
               }`}
             >
@@ -254,7 +257,7 @@ export default function App() {
                 <button
                   key={store}
                   onClick={() => setFilter(store)}
-                  className={`px-4 py-2 rounded-full font-medium transition text-sm flex items-center gap-1 ${
+                  className={`px-4 py-2.5 rounded-full font-medium transition text-sm flex items-center gap-1 active:scale-95 ${
                     filter === store ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                   }`}
                 >
@@ -326,7 +329,7 @@ export default function App() {
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <p className="font-bold text-gray-900">${order.amount.toFixed(2)}</p>
-                      <p className="text-xs text-gray-500">{formatRelativeTime(order.createdAt)}</p>
+                      <p className="text-xs text-gray-600">{formatRelativeTime(order.createdAt)}</p>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${statusColors[order.status]}`}>
                       {statusLabels[order.status]}
