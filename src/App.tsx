@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Bell, Search, Link2, Link2Off, RefreshCw, Inbox } from 'lucide-react'
+import { Bell, Search, Link2, Link2Off, RefreshCw, Check, ShoppingBag, ExternalLink } from 'lucide-react'
 import {
   type Order,
   isConnected as isEtsyConnected,
@@ -11,6 +11,8 @@ import { enablePush, isPushEnabled, sendTestPush } from './lib/push'
 
 type Store = Order['store']
 type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
+
+const ETSY_ORDERS_URL = 'https://www.etsy.com/your/orders/sold'
 
 const STORE_META: Record<Store, { label: string; color: string; emoji: string; conn: ConnState }> = {
   etsy:    { label: 'Etsy',    color: 'bg-orange-500/15 text-orange-300 border-orange-500/30', emoji: '🧵', conn: 'connectable' },
@@ -26,20 +28,8 @@ const CONN_LABEL: Record<ConnState, string> = {
   no_api: 'No public API',
 }
 
-function formatRelativeTime(dateString: string): string {
-  const date = new Date(dateString)
-  const diff = Date.now() - date.getTime()
-  const mins = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  if (hours < 24) return `${hours}h ago`
-  return `${days}d ago`
-}
-
-// Animated count-up (easeOutCubic) for the revenue ticker.
-function useCountUp(target: number, duration = 1200): number {
+// Animated count-up (easeOutCubic).
+function useCountUp(target: number, duration = 900): number {
   const [value, setValue] = useState(0)
   const rafRef = useRef<number | undefined>(undefined)
   useEffect(() => {
@@ -58,15 +48,7 @@ function useCountUp(target: number, duration = 1200): number {
   return value
 }
 
-const STATUS_STYLE: Record<Order['status'], { label: string; cls: string; sonar?: boolean }> = {
-  unshipped: { label: 'To ship', cls: 'text-[#00e676] border-[#00e676]/40 bg-[#00e676]/12', sonar: true },
-  shipped:   { label: 'Shipped', cls: 'text-[#f5a623] border-[#f5a623]/40 bg-[#f5a623]/12' },
-  completed: { label: 'Completed', cls: 'text-[#00d4c8] border-[#00d4c8]/40 bg-[#00d4c8]/12' },
-  canceled:  { label: 'Canceled', cls: 'text-[#ff4757] border-[#ff4757]/40 bg-[#ff4757]/12' },
-}
-
 export default function App() {
-  const [filter, setFilter] = useState<Store | 'all'>('all')
   const [notifEnabled, setNotifEnabled] = useState(false)
   const [etsyConnected, setEtsyConnected] = useState<boolean>(() => isEtsyConnected())
   const [etsyOrders, setEtsyOrders] = useState<Order[]>([])
@@ -122,6 +104,8 @@ export default function App() {
       if (connected !== etsyConnected) {
         setEtsyConnected(connected)
         if (connected) loadEtsy(false)
+      } else if (connected) {
+        loadEtsy(false)
       }
     }
     window.addEventListener('focus', onFocus)
@@ -132,23 +116,19 @@ export default function App() {
     isPushEnabled().then(setNotifEnabled)
   }, [])
 
-  // Only real data — no mocks.
-  const allOrders = [...etsyOrders].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  )
+  // Orders awaiting fulfillment = "new orders" the user must act on.
+  const newCount = etsyOrders.filter(o => o.status === 'unshipped').length
+  const animatedCount = Math.round(useCountUp(newCount))
 
-  const filtered = filter === 'all' ? allOrders : allOrders.filter(o => o.store === filter)
-  // Revenue excludes canceled/refunded orders — those aren't real income.
-  const totalRevenue = filtered
-    .filter(o => o.status !== 'canceled')
-    .reduce((sum, o) => sum + o.amount, 0)
-  const toShipCount = filtered.filter(o => o.status === 'unshipped').length
-  const anyStoreConnected = etsyConnected
-  const animatedRevenue = useCountUp(totalRevenue)
-
-  function getStoreCount(store: Store): number {
-    return allOrders.filter(o => o.store === store).length
-  }
+  // Mirror the count onto the home-screen app icon (red badge), like Mail/WhatsApp.
+  useEffect(() => {
+    const nav = navigator as Navigator & {
+      setAppBadge?: (n?: number) => Promise<void>
+      clearAppBadge?: () => Promise<void>
+    }
+    if (newCount > 0) nav.setAppBadge?.(newCount).catch(() => {})
+    else nav.clearAppBadge?.().catch(() => {})
+  }, [newCount])
 
   async function handleEnablePush() {
     if (notifEnabled) {
@@ -185,7 +165,7 @@ export default function App() {
           WebkitBackdropFilter: 'blur(24px) saturate(180%)',
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center text-black bg-gradient-to-br from-[#ffb800] to-[#00d4c8]">
               <Search size={22} strokeWidth={2.75} />
@@ -197,7 +177,7 @@ export default function App() {
               onClick={() => loadEtsy(false)}
               disabled={!etsyConnected || loading}
               className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/[0.06] text-white/70 hover:bg-white/10 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition"
-              title="Refresh orders"
+              title="Refresh"
             >
               <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
             </button>
@@ -214,9 +194,71 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+        {error && (
+          <div className="mb-6 glass border border-[#ff4757]/30 p-4">
+            <p className="text-sm text-[#ff4757]">Error fetching orders: {error}</p>
+          </div>
+        )}
+
+        {/* HERO: new-orders indicator (no order details — those live in Etsy) */}
+        {!etsyConnected ? (
+          <div className="glass glass-glow p-10 text-center animate-slide-up mb-8">
+            <ShoppingBag className="mx-auto text-white/20 mb-4" size={48} />
+            <p className="text-white font-semibold text-lg mb-1">Connect your shop</p>
+            <p className="text-white/45 mb-6">Connect Etsy to start tracking new orders.</p>
+            <button
+              onClick={connectEtsy}
+              className="px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center gap-2"
+            >
+              <Link2 size={16} /> Connect Etsy
+            </button>
+          </div>
+        ) : loading && !hasLoaded ? (
+          <div className="glass p-10 mb-8">
+            <div className="shimmer h-24 w-full" />
+          </div>
+        ) : newCount > 0 ? (
+          <div className="glass glass-glow p-10 text-center animate-slide-up mb-8 relative overflow-visible">
+            <div className="inline-flex items-center justify-center mb-4">
+              <span className="relative flex items-center justify-center">
+                <span className="absolute inline-flex w-20 h-20 rounded-full bg-[#00e676]/20 animate-ping" />
+                <span className="relative text-7xl font-extrabold metric-gold tabular-nums">{animatedCount}</span>
+              </span>
+            </div>
+            <p className="text-white text-xl font-semibold mb-1">
+              {newCount === 1 ? 'New order to ship' : 'New orders to ship'}
+            </p>
+            <p className="text-white/45 mb-6">Tap below to view the details on Etsy.</p>
+            <a
+              href={ETSY_ORDERS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center gap-2"
+            >
+              View orders on Etsy <ExternalLink size={16} />
+            </a>
+          </div>
+        ) : (
+          <div className="glass glass-glow p-10 text-center animate-slide-up mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#00d4c8]/15 flex items-center justify-center">
+              <Check className="text-[#00d4c8]" size={32} strokeWidth={3} />
+            </div>
+            <p className="text-white text-xl font-semibold mb-1">All caught up</p>
+            <p className="text-white/45 mb-6">No new orders to ship right now.</p>
+            <a
+              href={ETSY_ORDERS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-white/60 hover:text-white inline-flex items-center gap-1.5"
+            >
+              View all orders on Etsy <ExternalLink size={14} />
+            </a>
+          </div>
+        )}
+
         {/* Store connections */}
-        <section className="mb-8">
+        <section>
           <h2 className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Stores</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {(Object.keys(STORE_META) as Store[]).map((store, i) => {
@@ -258,135 +300,6 @@ export default function App() {
             })}
           </div>
         </section>
-
-        {error && (
-          <div className="mb-6 glass border border-[#ff4757]/30 p-4">
-            <p className="text-sm text-[#ff4757]">Error fetching orders: {error}</p>
-          </div>
-        )}
-
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="glass glass-glow p-6 animate-slide-up" style={{ animationDelay: '120ms' }}>
-            <p className="text-sm font-medium text-white/45 mb-2">Total Orders</p>
-            <p className="text-4xl font-extrabold text-white tabular-nums tracking-tight">{filtered.length}</p>
-          </div>
-          <div className="glass glass-glow p-6 animate-slide-up" style={{ animationDelay: '190ms' }}>
-            <p className="text-sm font-medium text-white/45 mb-2">To Ship</p>
-            <p className="text-4xl font-extrabold tabular-nums tracking-tight text-[#00e676]">{toShipCount}</p>
-          </div>
-          <div className="glass glass-glow p-6 animate-slide-up" style={{ animationDelay: '260ms' }}>
-            <p className="text-sm font-medium text-white/45 mb-2">Revenue</p>
-            <p className={`text-4xl font-extrabold tabular-nums tracking-tight ${totalRevenue > 0 ? 'metric-gold' : 'text-white/30'}`}>
-              ${animatedRevenue.toFixed(2)}
-            </p>
-          </div>
-        </div>
-
-        {/* Filters */}
-        {allOrders.length > 0 && (
-          <div className="mb-6 flex flex-wrap gap-2">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-2.5 rounded-full font-medium transition text-sm active:scale-95 ${
-                filter === 'all'
-                  ? 'bg-white text-black'
-                  : 'bg-white/[0.06] text-white/70 border border-white/10 hover:bg-white/10'
-              }`}
-            >
-              All ({allOrders.length})
-            </button>
-            {(Object.keys(STORE_META) as Store[])
-              .filter(store => getStoreCount(store) > 0)
-              .map(store => (
-                <button
-                  key={store}
-                  onClick={() => setFilter(store)}
-                  className={`px-4 py-2.5 rounded-full font-medium transition text-sm flex items-center gap-1 active:scale-95 ${
-                    filter === store
-                      ? 'bg-white text-black'
-                      : 'bg-white/[0.06] text-white/70 border border-white/10 hover:bg-white/10'
-                  }`}
-                >
-                  {STORE_META[store].emoji} {STORE_META[store].label}{' '}
-                  <span className="text-xs opacity-60">({getStoreCount(store)})</span>
-                </button>
-              ))}
-          </div>
-        )}
-
-        {/* Order list */}
-        {!anyStoreConnected ? (
-          <div className="glass glass-glow p-12 text-center">
-            <Inbox className="mx-auto text-white/20 mb-4" size={48} />
-            <p className="text-white font-semibold text-lg mb-1">No store connected</p>
-            <p className="text-white/45 mb-6">Connect a store above to start seeing your real orders.</p>
-            <button
-              onClick={connectEtsy}
-              className="px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center gap-2"
-            >
-              <Link2 size={16} /> Connect Etsy
-            </button>
-          </div>
-        ) : loading && !hasLoaded ? (
-          <div className="space-y-3">
-            {[0, 1, 2].map(i => (
-              <div key={i} className="glass p-4 flex items-center gap-4">
-                <div className="shimmer w-16 h-9" />
-                <div className="flex-1 space-y-2">
-                  <div className="shimmer h-4 w-2/3" />
-                  <div className="shimmer h-3 w-1/3" />
-                </div>
-                <div className="shimmer h-6 w-16" />
-              </div>
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="glass glass-glow p-12 text-center">
-            <Inbox className="mx-auto text-white/20 mb-4" size={48} />
-            <p className="text-white font-semibold text-lg mb-1">No orders yet</p>
-            <p className="text-white/45">
-              {filter === 'all'
-                ? 'Your connected store has no orders to show right now.'
-                : `No ${STORE_META[filter as Store].label} orders.`}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filtered.map((order, i) => {
-              const meta = STORE_META[order.store]
-              const st = STATUS_STYLE[order.status]
-              return (
-                <div
-                  key={order.id}
-                  className="glass glass-glow pressable animate-slide-up p-4"
-                  style={{ animationDelay: `${Math.min(i, 8) * 60}ms` }}
-                >
-                  {/* Line 1: store chip + product + status */}
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`px-2 py-1 rounded-lg border ${meta.color} font-medium text-xs whitespace-nowrap shrink-0`}>
-                      {meta.emoji} {meta.label}
-                    </span>
-                    <p className="font-semibold text-white truncate flex-1 min-w-0">{order.product}</p>
-                    <span
-                      className={`px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap shrink-0 ${st.cls} ${st.sonar ? 'sonar' : ''}`}
-                    >
-                      {st.label}
-                    </span>
-                  </div>
-                  {/* Line 2: buyer + price + time */}
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm text-white/45 truncate min-w-0">{order.buyer}</p>
-                    <p className="text-sm whitespace-nowrap shrink-0">
-                      <span className="font-bold text-white tabular-nums">${order.amount.toFixed(2)}</span>
-                      <span className="text-white/35 ml-2">{formatRelativeTime(order.createdAt)}</span>
-                    </p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
       </main>
     </div>
   )
