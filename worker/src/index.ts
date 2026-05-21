@@ -13,7 +13,24 @@ interface Env {
   VAPID_PUBLIC: string
   VAPID_PRIVATE: string
   VAPID_SUBJECT: string
+  AMAZON_CLIENT_ID: string
+  AMAZON_CLIENT_SECRET: string
+  AMAZON_REFRESH_TOKEN: string
+  AMAZON_MARKETPLACES: string
 }
+
+interface NormalizedOrder {
+  id: string
+  store: 'etsy' | 'amazon'
+  product: string
+  buyer: string
+  amount: number
+  currency: string
+  status: 'unshipped' | 'shipped' | 'completed' | 'canceled'
+  createdAt: string
+}
+
+const AMAZON_SP_ENDPOINT = 'https://sellingpartnerapi-na.amazon.com'
 
 interface PushSub {
   endpoint: string
@@ -125,6 +142,78 @@ async function pollEtsy(env: Env): Promise<void> {
   await env.PUSH_KV.put('seen', JSON.stringify(currentIds))
 }
 
+// ── Amazon SP-API ──────────────────────────────────────────────
+async function getAmazonAccessToken(env: Env): Promise<string | null> {
+  const resp = await fetch('https://api.amazon.com/auth/o2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: env.AMAZON_REFRESH_TOKEN,
+      client_id: env.AMAZON_CLIENT_ID,
+      client_secret: env.AMAZON_CLIENT_SECRET,
+    }),
+  })
+  if (!resp.ok) return null
+  const t = (await resp.json()) as { access_token?: string }
+  return t.access_token ?? null
+}
+
+function mapAmazonStatus(s: string, unshipped?: number): NormalizedOrder['status'] {
+  const v = (s || '').toLowerCase()
+  if (v === 'canceled' || v === 'cancelled') return 'canceled'
+  if (v === 'shipped') return 'shipped'
+  if (v === 'pending' || v === 'unshipped' || v === 'partiallyshipped') return 'unshipped'
+  if (unshipped && unshipped > 0) return 'unshipped'
+  return 'completed'
+}
+
+async function fetchAmazonOrders(env: Env): Promise<NormalizedOrder[]> {
+  const at = await getAmazonAccessToken(env)
+  if (!at) return []
+  const after = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().replace(/\.\d+Z$/, 'Z')
+  const params = new URLSearchParams({ MarketplaceIds: env.AMAZON_MARKETPLACES, CreatedAfter: after })
+  const r = await fetch(`${AMAZON_SP_ENDPOINT}/orders/v0/orders?${params}`, {
+    headers: { 'x-amz-access-token': at },
+  })
+  if (!r.ok) return []
+  const data = (await r.json()) as { payload?: { Orders?: Array<Record<string, unknown>> } }
+  const orders = data.payload?.Orders ?? []
+  return orders.map(o => {
+    const total = o.OrderTotal as { Amount?: string; CurrencyCode?: string } | undefined
+    const itemCount = (Number(o.NumberOfItemsShipped) || 0) + (Number(o.NumberOfItemsUnshipped) || 0)
+    return {
+      id: `amazon-${o.AmazonOrderId}`,
+      store: 'amazon' as const,
+      product: itemCount > 0 ? `${itemCount} item${itemCount === 1 ? '' : 's'}` : 'Amazon order',
+      buyer: 'Amazon customer',
+      amount: total?.Amount ? Number(total.Amount) : 0,
+      currency: total?.CurrencyCode ?? '',
+      status: mapAmazonStatus(String(o.OrderStatus ?? ''), Number(o.NumberOfItemsUnshipped)),
+      createdAt: (o.PurchaseDate as string) ?? new Date().toISOString(),
+    }
+  })
+}
+
+async function pollAmazon(env: Env): Promise<void> {
+  const orders = await fetchAmazonOrders(env)
+  await env.PUSH_KV.put('amz:orders', JSON.stringify(orders)) // cache for dashboard
+  const seen: string[] = JSON.parse((await env.PUSH_KV.get('amz:seen')) || '[]')
+  const seenSet = new Set(seen)
+  const isFirstRun = seen.length === 0
+  if (!isFirstRun) {
+    const newOnes = orders.filter(o => !seenSet.has(o.id) && o.status !== 'canceled').reverse()
+    for (const o of newOnes) {
+      await pushToAll(env, {
+        title: '📦 New Amazon order',
+        body: `${o.product} — $${o.amount.toFixed(2)} ${o.currency}`,
+        url: '/',
+      })
+    }
+  }
+  await env.PUSH_KV.put('amz:seen', JSON.stringify(orders.map(o => o.id)))
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS })
@@ -150,9 +239,20 @@ export default {
       return json({ ok: true, sent })
     }
 
+    if (url.pathname === '/amazon/orders' && request.method === 'GET') {
+      let cached = await env.PUSH_KV.get('amz:orders')
+      if (!cached) {
+        const orders = await fetchAmazonOrders(env)
+        cached = JSON.stringify(orders)
+        await env.PUSH_KV.put('amz:orders', cached)
+      }
+      return new Response(cached, { headers: { 'Content-Type': 'application/json', ...CORS } })
+    }
+
     if (url.pathname === '/poll' && request.method === 'POST') {
-      // Manual trigger for testing the Etsy poll.
+      // Manual trigger for testing both polls.
       await pollEtsy(env)
+      await pollAmazon(env)
       return json({ ok: true })
     }
 
@@ -161,5 +261,6 @@ export default {
 
   async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
     await pollEtsy(env)
+    await pollAmazon(env)
   },
 }

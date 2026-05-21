@@ -8,6 +8,7 @@ import {
   clearTokens,
 } from './lib/etsy'
 import { enablePush, isPushEnabled, sendTestPush } from './lib/push'
+import { fetchAmazonOrders } from './lib/amazon'
 
 type Store = Order['store']
 type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
@@ -52,6 +53,8 @@ export default function App() {
   const [notifEnabled, setNotifEnabled] = useState(false)
   const [etsyConnected, setEtsyConnected] = useState<boolean>(() => isEtsyConnected())
   const [etsyOrders, setEtsyOrders] = useState<Order[]>([])
+  const [amazonConnected, setAmazonConnected] = useState(false)
+  const [amazonOrders, setAmazonOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [hasLoaded, setHasLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -112,12 +115,30 @@ export default function App() {
     return () => window.removeEventListener('focus', onFocus)
   }, [etsyConnected, loadEtsy])
 
+  const loadAmazon = useCallback(async () => {
+    try {
+      const orders = await fetchAmazonOrders()
+      setAmazonOrders(orders)
+      setAmazonConnected(true)
+    } catch {
+      setAmazonConnected(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadAmazon()
+    const interval = setInterval(loadAmazon, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [loadAmazon])
+
   useEffect(() => {
     isPushEnabled().then(setNotifEnabled)
   }, [])
 
   // Orders awaiting fulfillment = "new orders" the user must act on.
-  const newCount = etsyOrders.filter(o => o.status === 'unshipped').length
+  const allOrders = [...etsyOrders, ...amazonOrders]
+  const newCount = allOrders.filter(o => o.status === 'unshipped').length
+  const anyConnected = etsyConnected || amazonConnected
   const animatedCount = Math.round(useCountUp(newCount))
 
   // Mirror the count onto the home-screen app icon (red badge), like Mail/WhatsApp.
@@ -201,8 +222,8 @@ export default function App() {
           </div>
         )}
 
-        {/* HERO: new-orders indicator (no order details — those live in Etsy) */}
-        {!etsyConnected ? (
+        {/* HERO: new-orders indicator (no order details — those live in each store) */}
+        {!anyConnected ? (
           <div className="glass glass-glow p-10 text-center animate-slide-up mb-8">
             <ShoppingBag className="mx-auto text-white/20 mb-4" size={48} />
             <p className="text-white font-semibold text-lg mb-1">Connect your shop</p>
@@ -263,7 +284,8 @@ export default function App() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {(Object.keys(STORE_META) as Store[]).map((store, i) => {
               const meta = STORE_META[store]
-              const connected = store === 'etsy' && etsyConnected
+              const connected =
+                (store === 'etsy' && etsyConnected) || (store === 'amazon' && amazonConnected)
               return (
                 <div
                   key={store}
@@ -277,13 +299,15 @@ export default function App() {
                   {connected ? (
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-[#00d4c8]">● Connected</span>
-                      <button
-                        onClick={handleDisconnectEtsy}
-                        className="w-9 h-9 -mr-1 flex items-center justify-center text-white/40 hover:text-white/80 active:scale-95"
-                        title="Disconnect"
-                      >
-                        <Link2Off size={16} />
-                      </button>
+                      {store === 'etsy' && (
+                        <button
+                          onClick={handleDisconnectEtsy}
+                          className="w-9 h-9 -mr-1 flex items-center justify-center text-white/40 hover:text-white/80 active:scale-95"
+                          title="Disconnect"
+                        >
+                          <Link2Off size={16} />
+                        </button>
+                      )}
                     </div>
                   ) : meta.conn === 'connectable' ? (
                     <button
