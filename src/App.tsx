@@ -15,6 +15,12 @@ type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
 
 const ETSY_ORDERS_URL = 'https://www.etsy.com/your/orders/sold'
 
+// Where each store's order manager lives — tapping a connected store opens it.
+const STORE_ORDER_URLS: Partial<Record<Store, string>> = {
+  etsy: 'https://www.etsy.com/your/orders/sold',
+  amazon: 'https://sellercentral.amazon.com/orders-v3/',
+}
+
 const STORE_META: Record<Store, { label: string; color: string; emoji: string; conn: ConnState }> = {
   etsy:    { label: 'Etsy',    color: 'bg-orange-500/15 text-orange-300 border-orange-500/30', emoji: '🧵', conn: 'connectable' },
   amazon:  { label: 'Amazon',  color: 'bg-amber-500/15 text-amber-300 border-amber-500/30', emoji: '📦', conn: 'api_pending' },
@@ -286,10 +292,17 @@ export default function App() {
               const meta = STORE_META[store]
               const connected =
                 (store === 'etsy' && etsyConnected) || (store === 'amazon' && amazonConnected)
+              const orderUrl = STORE_ORDER_URLS[store]
+              const openStore = () => {
+                if (connected && orderUrl) window.open(orderUrl, '_blank', 'noopener')
+              }
               return (
                 <div
                   key={store}
-                  className={`glass glass-glow pressable animate-slide-up p-4 ${connected ? 'ring-1 ring-[#00d4c8]/40' : ''}`}
+                  onClick={openStore}
+                  className={`glass glass-glow pressable animate-slide-up p-4 ${
+                    connected ? 'ring-1 ring-[#00d4c8]/40 cursor-pointer' : ''
+                  }`}
                   style={{ animationDelay: `${i * 70}ms` }}
                 >
                   <div className="flex items-center gap-2 mb-2">
@@ -297,21 +310,32 @@ export default function App() {
                     <span className="font-semibold text-white">{meta.label}</span>
                   </div>
                   {connected ? (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-[#00d4c8]">● Connected</span>
-                      {store === 'etsy' && (
-                        <button
-                          onClick={handleDisconnectEtsy}
-                          className="w-9 h-9 -mr-1 flex items-center justify-center text-white/40 hover:text-white/80 active:scale-95"
-                          title="Disconnect"
-                        >
-                          <Link2Off size={16} />
-                        </button>
-                      )}
-                    </div>
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-[#00d4c8]">● Connected</span>
+                        {store === 'etsy' && (
+                          <button
+                            onClick={e => {
+                              e.stopPropagation()
+                              handleDisconnectEtsy()
+                            }}
+                            className="w-9 h-9 -mr-1 flex items-center justify-center text-white/40 hover:text-white/80 active:scale-95"
+                            title="Disconnect"
+                          >
+                            <Link2Off size={16} />
+                          </button>
+                        )}
+                      </div>
+                      <span className="mt-1 inline-flex items-center gap-1 text-xs text-white/40">
+                        View orders <ExternalLink size={11} />
+                      </span>
+                    </>
                   ) : meta.conn === 'connectable' ? (
                     <button
-                      onClick={connectEtsy}
+                      onClick={e => {
+                        e.stopPropagation()
+                        connectEtsy()
+                      }}
                       className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition flex items-center justify-center gap-1.5"
                     >
                       <Link2 size={16} /> Connect
