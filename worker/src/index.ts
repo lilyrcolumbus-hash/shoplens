@@ -115,10 +115,16 @@ async function pollEtsy(env: Env): Promise<void> {
     results: Array<{
       receipt_id: number
       name: string
+      is_shipped: boolean
       grandtotal: { amount: number; divisor: number }
       transactions: Array<{ title: string }>
     }>
   }
+
+  // Open orders awaiting shipment -> drives the home-screen icon badge count.
+  const etsyOpen = data.results.filter(rc => !rc.is_shipped).length
+  await env.PUSH_KV.put('etsy:open', String(etsyOpen))
+  const toShip = etsyOpen + (Number(await env.PUSH_KV.get('amz:open')) || 0)
 
   const seen: number[] = JSON.parse((await env.PUSH_KV.get('seen')) || '[]')
   const seenSet = new Set(seen)
@@ -135,6 +141,7 @@ async function pollEtsy(env: Env): Promise<void> {
         title: '🧵 New Etsy order',
         body: `${rc.name} — ${product} ($${total.toFixed(2)})`,
         url: '/',
+        count: toShip,
       })
     }
   }
@@ -198,6 +205,9 @@ async function fetchAmazonOrders(env: Env): Promise<NormalizedOrder[]> {
 async function pollAmazon(env: Env): Promise<void> {
   const orders = await fetchAmazonOrders(env)
   await env.PUSH_KV.put('amz:orders', JSON.stringify(orders)) // cache for dashboard
+  const amzOpen = orders.filter(o => o.status === 'unshipped').length
+  await env.PUSH_KV.put('amz:open', String(amzOpen))
+  const toShip = amzOpen + (Number(await env.PUSH_KV.get('etsy:open')) || 0)
   const seen: string[] = JSON.parse((await env.PUSH_KV.get('amz:seen')) || '[]')
   const seenSet = new Set(seen)
   const isFirstRun = seen.length === 0
@@ -208,6 +218,7 @@ async function pollAmazon(env: Env): Promise<void> {
         title: '📦 New Amazon order',
         body: `${o.product} — $${o.amount.toFixed(2)} ${o.currency}`,
         url: '/',
+        count: toShip,
       })
     }
   }
@@ -231,12 +242,19 @@ export default {
     }
 
     if (url.pathname === '/test' && request.method === 'POST') {
+      const override = url.searchParams.get('badge')
+      const count =
+        override !== null
+          ? Number(override)
+          : (Number(await env.PUSH_KV.get('etsy:open')) || 0) +
+            (Number(await env.PUSH_KV.get('amz:open')) || 0)
       const sent = await pushToAll(env, {
         title: '🔔 ShopLens',
         body: 'Notifications are working! You will be alerted on new orders.',
         url: '/',
+        count,
       })
-      return json({ ok: true, sent })
+      return json({ ok: true, sent, count })
     }
 
     if (url.pathname === '/amazon/orders' && request.method === 'GET') {

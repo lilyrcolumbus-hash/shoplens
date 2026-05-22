@@ -16,9 +16,9 @@ precacheAndRoute(self.__WB_MANIFEST)
 const navHandler = createHandlerBoundToURL('index.html')
 registerRoute(new NavigationRoute(navHandler, { denylist: [/^\/api\//] }))
 
-// Incoming web push -> show a notification.
+// Incoming web push -> show a notification + update the home-screen icon badge.
 self.addEventListener('push', (event: PushEvent) => {
-  let payload: { title: string; body: string; url?: string } = {
+  let payload: { title: string; body: string; url?: string; count?: number } = {
     title: 'ShopLens',
     body: 'New activity',
     url: '/',
@@ -28,13 +28,24 @@ self.addEventListener('push', (event: PushEvent) => {
   } catch {
     if (event.data) payload.body = event.data.text()
   }
+  const nav = self.navigator as WorkerNavigator & {
+    setAppBadge?: (n?: number) => Promise<void>
+    clearAppBadge?: () => Promise<void>
+  }
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      icon: '/icon-512.png',
-      badge: '/icon-512.png',
-      data: { url: payload.url ?? '/' },
-    }),
+    (async () => {
+      await self.registration.showNotification(payload.title, {
+        body: payload.body,
+        icon: '/icon-512.png',
+        badge: '/icon-512.png',
+        data: { url: payload.url ?? '/' },
+      })
+      // Red number badge on the app icon, set in the background (iOS 16.4+ PWA).
+      if (typeof payload.count === 'number' && nav.setAppBadge) {
+        if (payload.count > 0) await nav.setAppBadge(payload.count).catch(() => {})
+        else await nav.clearAppBadge?.().catch(() => {})
+      }
+    })(),
   )
 })
 
