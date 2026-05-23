@@ -232,8 +232,9 @@ function PerformanceView({ orders, onBack }: { orders: Order[]; onBack: () => vo
       ) : (
         <>
           {/* Store health — the diagnosis */}
+          <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Health</p>
           <div className="glass p-4 mb-3 flex items-center justify-between">
-            <span className="text-sm text-white/60">Overall health</span>
+            <span className="text-sm text-white/60">Overall</span>
             <span className="text-sm text-white flex items-center gap-2">{overall.dot} {overall.label}</span>
           </div>
           <div className="grid grid-cols-2 gap-3 mb-6">
@@ -283,11 +284,13 @@ function PerformanceView({ orders, onBack }: { orders: Order[]; onBack: () => vo
               <p className="text-xs text-white/40 mb-1">Revenue (7d)</p>
               <p className="text-lg font-bold metric-gold tabular-nums mb-2">{money(thisRev, primaryCcy)}</p>
               <Chip pct={pctChange(thisRev, prevRev)} />
+              <p className="text-[10px] text-white/30 mt-1.5">vs {money(prevRev, primaryCcy)} last wk</p>
             </div>
             <div className="glass p-4">
               <p className="text-xs text-white/40 mb-1">Orders (7d)</p>
               <p className="text-lg font-bold text-white tabular-nums mb-2">{thisCnt}</p>
               <Chip pct={pctChange(thisCnt, prevCnt)} />
+              <p className="text-[10px] text-white/30 mt-1.5">vs {prevCnt} last wk</p>
             </div>
           </div>
 
@@ -313,16 +316,25 @@ function PerformanceView({ orders, onBack }: { orders: Order[]; onBack: () => vo
           </div>
 
           {/* 14-day chart (secondary) */}
-          <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Revenue · last 14 days</p>
+          <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Revenue · last 14 days ({primaryCcy})</p>
           <div className="glass p-4">
-            <div className="flex items-end gap-1 h-24">
+            <div className="flex items-end gap-1 h-32">
               {buckets.map((b, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${b.label}: ${money(b.value, primaryCcy)}`}>
-                  <div className="w-full rounded-t bg-gradient-to-t from-[#ffb800] to-[#00d4c8]" style={{ height: `${Math.max(2, (b.value / max) * 100)}%`, opacity: b.value > 0 ? 1 : 0.18 }} />
+                <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1 h-full min-w-0" title={`${b.label}: ${money(b.value, primaryCcy)}`}>
+                  <div
+                    className="w-full rounded-t"
+                    style={{
+                      height: `${b.value > 0 ? Math.max(10, (b.value / max) * 100) : 3}%`,
+                      background: b.value > 0 ? 'linear-gradient(to top, #ffb800, #00d4c8)' : 'rgba(255,255,255,0.07)',
+                    }}
+                  />
                   <span className="text-[9px] text-white/30">{i % 3 === 0 ? b.label : ''}</span>
                 </div>
               ))}
             </div>
+            {buckets.every(b => b.value === 0) && (
+              <p className="text-xs text-white/30 text-center mt-3">No revenue in the last 14 days.</p>
+            )}
           </div>
         </>
       )}
