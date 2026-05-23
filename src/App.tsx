@@ -142,6 +142,35 @@ function money(amount: number, currency: string): string {
   }
 }
 
+function pctChange(cur: number, prev: number): number | null {
+  if (prev === 0) return cur > 0 ? 100 : null
+  return Math.round(((cur - prev) / prev) * 100)
+}
+
+function Chip({ pct }: { pct: number | null }) {
+  if (pct === null) return <span className="text-xs px-2 py-0.5 rounded-full bg-white/[0.06] text-white/40">— no data</span>
+  const up = pct >= 0
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full ${up ? 'bg-[#00e676]/15 text-[#00e676]' : 'bg-[#ff4757]/15 text-[#ff4757]'}`}>
+      {up ? '▲' : '▼'} {Math.abs(pct)}%
+    </span>
+  )
+}
+
+function daysSinceLastSale(orders: Order[]): number | null {
+  const ts = orders.map(o => +new Date(o.createdAt)).filter(n => !isNaN(n))
+  if (!ts.length) return null
+  return Math.floor((Date.now() - Math.max(...ts)) / 86400000)
+}
+
+// Traffic-light health from recency of the last sale (real signal we have today).
+function health(daysSince: number | null): { dot: string; label: string } {
+  if (daysSince === null) return { dot: '🔴', label: 'No sales yet' }
+  if (daysSince <= 7) return { dot: '🟢', label: `Last sale ${daysSince}d ago` }
+  if (daysSince <= 21) return { dot: '🟡', label: `Last sale ${daysSince}d ago` }
+  return { dot: '🔴', label: `Last sale ${daysSince}d ago` }
+}
+
 // Performance analytics from real orders. Revenue is grouped by currency (Amazon spans
 // MX/CA/BR/US marketplaces) — we never sum across currencies; we show the primary one.
 function PerformanceView({ orders, onBack }: { orders: Order[]; onBack: () => void }) {
@@ -160,24 +189,29 @@ function PerformanceView({ orders, onBack }: { orders: Order[]; onBack: () => vo
   const primaryCount = cntByCcy.get(primaryCcy) ?? 0
   const aov = primaryCount ? primaryRev / primaryCount : 0
 
-  const storePerf = (store: Store) => {
-    const list = active.filter(o => o.store === store && (o.currency || 'USD') === primaryCcy)
-    return { revenue: list.reduce((s, o) => s + o.amount, 0), count: list.length }
-  }
+  // This week vs last week (primary currency for revenue, all orders for count).
+  const DAY = 86400000, now = Date.now()
+  const inRange = (o: Order, a: number, b: number) => { const t = +new Date(o.createdAt); return t >= a && t < b }
+  const wkRev = (a: number, b: number) =>
+    active.filter(o => (o.currency || 'USD') === primaryCcy && inRange(o, a, b)).reduce((s, o) => s + o.amount, 0)
+  const wkCnt = (a: number, b: number) => active.filter(o => inRange(o, a, b)).length
+  const thisRev = wkRev(now - 7 * DAY, now + DAY), prevRev = wkRev(now - 14 * DAY, now - 7 * DAY)
+  const thisCnt = wkCnt(now - 7 * DAY, now + DAY), prevCnt = wkCnt(now - 14 * DAY, now - 7 * DAY)
 
-  // Revenue per day, last 14 days, primary currency only.
-  const days = 14
+  const stores: Store[] = ['etsy', 'amazon']
+  const overall = health(daysSinceLastSale(active))
+
+  // 14-day revenue chart, primary currency.
   const today = new Date(); today.setHours(0, 0, 0, 0)
-  const buckets = Array.from({ length: days }, (_, k) => {
-    const d = new Date(today); d.setDate(today.getDate() - (days - 1 - k))
+  const buckets = Array.from({ length: 14 }, (_, k) => {
+    const d = new Date(today); d.setDate(today.getDate() - (13 - k))
     return { key: d.toDateString(), label: d.toLocaleDateString('en-US', { day: 'numeric' }), value: 0 }
   })
   const idx = new Map(buckets.map((b, i) => [b.key, i]))
   for (const o of active) {
     if ((o.currency || 'USD') !== primaryCcy) continue
     const d = new Date(o.createdAt); d.setHours(0, 0, 0, 0)
-    const i = idx.get(d.toDateString())
-    if (i !== undefined) buckets[i].value += o.amount
+    const i = idx.get(d.toDateString()); if (i !== undefined) buckets[i].value += o.amount
   }
   const max = Math.max(1, ...buckets.map(b => b.value))
 
@@ -191,66 +225,104 @@ function PerformanceView({ orders, onBack }: { orders: Order[]; onBack: () => vo
         <span className="text-3xl">📊</span>
         <h2 className="text-2xl font-bold text-white">Performance</h2>
       </div>
-      <p className="text-white/45 mb-6">Based on {active.length} recent order{active.length === 1 ? '' : 's'} (Etsy + Amazon)</p>
+      <p className="text-white/45 mb-6">Recent orders (Etsy + Amazon) · revenue in {primaryCcy}</p>
 
       {active.length === 0 ? (
         <div className="glass p-10 text-center"><p className="text-white/50">No orders to analyze yet.</p></div>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div className="glass p-4">
-              <p className="text-xs text-white/40 mb-1">Revenue</p>
-              <p className="text-lg font-bold metric-gold tabular-nums">{money(primaryRev, primaryCcy)}</p>
-            </div>
-            <div className="glass p-4">
-              <p className="text-xs text-white/40 mb-1">Orders</p>
-              <p className="text-lg font-bold text-white tabular-nums">{active.length}</p>
-            </div>
-            <div className="glass p-4">
-              <p className="text-xs text-white/40 mb-1">Avg order</p>
-              <p className="text-lg font-bold text-white tabular-nums">{money(aov, primaryCcy)}</p>
-            </div>
+          {/* Store health — the diagnosis */}
+          <div className="glass p-4 mb-3 flex items-center justify-between">
+            <span className="text-sm text-white/60">Overall health</span>
+            <span className="text-sm text-white flex items-center gap-2">{overall.dot} {overall.label}</span>
           </div>
-
-          {currencies.length > 1 && (
-            <p className="text-xs text-white/40 mb-6">
-              Revenue shown in {primaryCcy}. Other currencies: {currencies.slice(1).map(([c, v]) => money(v, c)).join(', ')}
-            </p>
-          )}
-          {currencies.length <= 1 && <div className="mb-6" />}
-
-          <div className="glass p-4 mb-6">
-            <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Revenue · last 14 days ({primaryCcy})</p>
-            <div className="flex items-end gap-1 h-32">
-              {buckets.map((b, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${b.label}: ${money(b.value, primaryCcy)}`}>
-                  <div
-                    className="w-full rounded-t bg-gradient-to-t from-[#ffb800] to-[#00d4c8]"
-                    style={{ height: `${Math.max(2, (b.value / max) * 100)}%`, opacity: b.value > 0 ? 1 : 0.18 }}
-                  />
-                  <span className="text-[9px] text-white/30">{i % 2 === 0 ? b.label : ''}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">By store ({primaryCcy})</p>
-          <div className="space-y-2">
-            {(['etsy', 'amazon'] as const).map(store => {
-              const p = storePerf(store)
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            {stores.map(s => {
+              const list = active.filter(o => o.store === s)
+              const h = health(daysSinceLastSale(list))
               return (
-                <div key={store} className="glass p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{STORE_META[store].emoji}</span>
-                    <span className="font-semibold text-white">{STORE_META[store].label}</span>
+                <div key={s} className="glass p-4">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-lg">{STORE_META[s].emoji}</span>
+                    <span className="font-semibold text-white text-sm">{STORE_META[s].label}</span>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold metric-gold tabular-nums">{money(p.revenue, primaryCcy)}</p>
-                    <p className="text-xs text-white/40">{p.count} order{p.count === 1 ? '' : 's'} · avg {money(p.count ? p.revenue / p.count : 0, primaryCcy)}</p>
+                  <p className="text-sm flex items-center gap-1.5">
+                    <span>{h.dot}</span>
+                    <span className="text-white/55 text-xs">{list.length === 0 ? 'No sales yet' : h.label}</span>
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Key metrics — stacked rows (no clipping on mobile) */}
+          <div className="space-y-2 mb-3">
+            <div className="glass p-4 flex items-center justify-between">
+              <span className="text-white/55">Revenue</span>
+              <span className="text-lg font-bold metric-gold tabular-nums">{money(primaryRev, primaryCcy)}</span>
+            </div>
+            <div className="glass p-4 flex items-center justify-between">
+              <span className="text-white/55">Orders</span>
+              <span className="text-lg font-bold text-white tabular-nums">{active.length}</span>
+            </div>
+            <div className="glass p-4 flex items-center justify-between">
+              <span className="text-white/55">Avg order</span>
+              <span className="text-lg font-bold text-white tabular-nums">{money(aov, primaryCcy)}</span>
+            </div>
+          </div>
+          {currencies.length > 1 ? (
+            <p className="text-xs text-white/40 mb-6">Other currencies: {currencies.slice(1).map(([c, v]) => money(v, c)).join(', ')}</p>
+          ) : (
+            <div className="mb-6" />
+          )}
+
+          {/* This week vs last week */}
+          <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">This week vs last</p>
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <div className="glass p-4">
+              <p className="text-xs text-white/40 mb-1">Revenue (7d)</p>
+              <p className="text-lg font-bold metric-gold tabular-nums mb-2">{money(thisRev, primaryCcy)}</p>
+              <Chip pct={pctChange(thisRev, prevRev)} />
+            </div>
+            <div className="glass p-4">
+              <p className="text-xs text-white/40 mb-1">Orders (7d)</p>
+              <p className="text-lg font-bold text-white tabular-nums mb-2">{thisCnt}</p>
+              <Chip pct={pctChange(thisCnt, prevCnt)} />
+            </div>
+          </div>
+
+          {/* Revenue by store (overflow-safe) */}
+          <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Revenue by store ({primaryCcy})</p>
+          <div className="space-y-2 mb-6">
+            {stores.map(store => {
+              const list = active.filter(o => o.store === store && (o.currency || 'USD') === primaryCcy)
+              const rev = list.reduce((s, o) => s + o.amount, 0)
+              return (
+                <div key={store} className="glass p-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xl shrink-0">{STORE_META[store].emoji}</span>
+                    <span className="font-semibold text-white truncate">{STORE_META[store].label}</span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-bold metric-gold tabular-nums">{money(rev, primaryCcy)}</p>
+                    <p className="text-xs text-white/40">{list.length} order{list.length === 1 ? '' : 's'}</p>
                   </div>
                 </div>
               )
             })}
+          </div>
+
+          {/* 14-day chart (secondary) */}
+          <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Revenue · last 14 days</p>
+          <div className="glass p-4">
+            <div className="flex items-end gap-1 h-24">
+              {buckets.map((b, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${b.label}: ${money(b.value, primaryCcy)}`}>
+                  <div className="w-full rounded-t bg-gradient-to-t from-[#ffb800] to-[#00d4c8]" style={{ height: `${Math.max(2, (b.value / max) * 100)}%`, opacity: b.value > 0 ? 1 : 0.18 }} />
+                  <span className="text-[9px] text-white/30">{i % 3 === 0 ? b.label : ''}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </>
       )}
