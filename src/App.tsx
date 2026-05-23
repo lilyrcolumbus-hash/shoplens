@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Bell, Search, Link2, Link2Off, RefreshCw, Check, ShoppingBag, ExternalLink, ChevronRight, ArrowLeft } from 'lucide-react'
+import { Bell, Search, Link2, Link2Off, RefreshCw, Check, ShoppingBag, ExternalLink, ChevronRight, ArrowLeft, BarChart3 } from 'lucide-react'
 import {
   type Order,
   isConnected as isEtsyConnected,
@@ -134,6 +134,130 @@ function StoreDashboard({ store, orders, onBack }: { store: Store; orders: Order
   )
 }
 
+function money(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(amount)
+  } catch {
+    return `${(currency || '').trim()} ${amount.toFixed(2)}`.trim()
+  }
+}
+
+// Performance analytics from real orders. Revenue is grouped by currency (Amazon spans
+// MX/CA/BR/US marketplaces) — we never sum across currencies; we show the primary one.
+function PerformanceView({ orders, onBack }: { orders: Order[]; onBack: () => void }) {
+  const active = orders.filter(o => o.status !== 'canceled')
+
+  const revByCcy = new Map<string, number>()
+  const cntByCcy = new Map<string, number>()
+  for (const o of active) {
+    const c = o.currency || 'USD'
+    revByCcy.set(c, (revByCcy.get(c) ?? 0) + o.amount)
+    cntByCcy.set(c, (cntByCcy.get(c) ?? 0) + 1)
+  }
+  const currencies = [...revByCcy.entries()].sort((a, b) => b[1] - a[1])
+  const primaryCcy = currencies[0]?.[0] ?? 'USD'
+  const primaryRev = revByCcy.get(primaryCcy) ?? 0
+  const primaryCount = cntByCcy.get(primaryCcy) ?? 0
+  const aov = primaryCount ? primaryRev / primaryCount : 0
+
+  const storePerf = (store: Store) => {
+    const list = active.filter(o => o.store === store && (o.currency || 'USD') === primaryCcy)
+    return { revenue: list.reduce((s, o) => s + o.amount, 0), count: list.length }
+  }
+
+  // Revenue per day, last 14 days, primary currency only.
+  const days = 14
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const buckets = Array.from({ length: days }, (_, k) => {
+    const d = new Date(today); d.setDate(today.getDate() - (days - 1 - k))
+    return { key: d.toDateString(), label: d.toLocaleDateString('en-US', { day: 'numeric' }), value: 0 }
+  })
+  const idx = new Map(buckets.map((b, i) => [b.key, i]))
+  for (const o of active) {
+    if ((o.currency || 'USD') !== primaryCcy) continue
+    const d = new Date(o.createdAt); d.setHours(0, 0, 0, 0)
+    const i = idx.get(d.toDateString())
+    if (i !== undefined) buckets[i].value += o.amount
+  }
+  const max = Math.max(1, ...buckets.map(b => b.value))
+
+  return (
+    <div className="animate-slide-up">
+      <button onClick={onBack} className="mb-5 inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white active:scale-95 transition">
+        <ArrowLeft size={16} /> Back
+      </button>
+
+      <div className="flex items-center gap-3 mb-1">
+        <span className="text-3xl">📊</span>
+        <h2 className="text-2xl font-bold text-white">Performance</h2>
+      </div>
+      <p className="text-white/45 mb-6">Based on {active.length} recent order{active.length === 1 ? '' : 's'} (Etsy + Amazon)</p>
+
+      {active.length === 0 ? (
+        <div className="glass p-10 text-center"><p className="text-white/50">No orders to analyze yet.</p></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            <div className="glass p-4">
+              <p className="text-xs text-white/40 mb-1">Revenue</p>
+              <p className="text-lg font-bold metric-gold tabular-nums">{money(primaryRev, primaryCcy)}</p>
+            </div>
+            <div className="glass p-4">
+              <p className="text-xs text-white/40 mb-1">Orders</p>
+              <p className="text-lg font-bold text-white tabular-nums">{active.length}</p>
+            </div>
+            <div className="glass p-4">
+              <p className="text-xs text-white/40 mb-1">Avg order</p>
+              <p className="text-lg font-bold text-white tabular-nums">{money(aov, primaryCcy)}</p>
+            </div>
+          </div>
+
+          {currencies.length > 1 && (
+            <p className="text-xs text-white/40 mb-6">
+              Revenue shown in {primaryCcy}. Other currencies: {currencies.slice(1).map(([c, v]) => money(v, c)).join(', ')}
+            </p>
+          )}
+          {currencies.length <= 1 && <div className="mb-6" />}
+
+          <div className="glass p-4 mb-6">
+            <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Revenue · last 14 days ({primaryCcy})</p>
+            <div className="flex items-end gap-1 h-32">
+              {buckets.map((b, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${b.label}: ${money(b.value, primaryCcy)}`}>
+                  <div
+                    className="w-full rounded-t bg-gradient-to-t from-[#ffb800] to-[#00d4c8]"
+                    style={{ height: `${Math.max(2, (b.value / max) * 100)}%`, opacity: b.value > 0 ? 1 : 0.18 }}
+                  />
+                  <span className="text-[9px] text-white/30">{i % 2 === 0 ? b.label : ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">By store ({primaryCcy})</p>
+          <div className="space-y-2">
+            {(['etsy', 'amazon'] as const).map(store => {
+              const p = storePerf(store)
+              return (
+                <div key={store} className="glass p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{STORE_META[store].emoji}</span>
+                    <span className="font-semibold text-white">{STORE_META[store].label}</span>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold metric-gold tabular-nums">{money(p.revenue, primaryCcy)}</p>
+                    <p className="text-xs text-white/40">{p.count} order{p.count === 1 ? '' : 's'} · avg {money(p.count ? p.revenue / p.count : 0, primaryCcy)}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const [notifEnabled, setNotifEnabled] = useState(false)
   const [etsyConnected, setEtsyConnected] = useState<boolean>(() => isEtsyConnected())
@@ -144,6 +268,7 @@ export default function App() {
   const [hasLoaded, setHasLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedStore, setSelectedStore] = useState<Store | null>(null)
+  const [showPerf, setShowPerf] = useState(false)
   const prevOrderIds = useRef<Set<string>>(new Set())
 
   const loadEtsy = useCallback(async (notifyOnNew = false) => {
@@ -280,6 +405,15 @@ export default function App() {
             <h1 className="text-2xl font-bold text-white tracking-tight">ShopLens</h1>
           </div>
           <div className="flex items-center gap-2">
+            {anyConnected && (
+              <button
+                onClick={() => { setSelectedStore(null); setShowPerf(true) }}
+                className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/[0.06] text-white/70 hover:bg-white/10 active:scale-95 transition"
+                title="Performance"
+              >
+                <BarChart3 size={20} />
+              </button>
+            )}
             <button
               onClick={() => loadEtsy(false)}
               disabled={!etsyConnected || loading}
@@ -308,7 +442,9 @@ export default function App() {
           </div>
         )}
 
-        {selectedStore ? (
+        {showPerf ? (
+          <PerformanceView orders={allOrders} onBack={() => setShowPerf(false)} />
+        ) : selectedStore ? (
           <StoreDashboard
             store={selectedStore}
             orders={selectedStore === 'etsy' ? etsyOrders : amazonOrders}
