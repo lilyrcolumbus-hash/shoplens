@@ -1,6 +1,7 @@
 // Etsy client — handles token storage, refresh, and order fetching.
 
 const STORAGE_KEY = 'shoplens_etsy_tokens'
+const WORKER_URL = 'https://shoplens-push.lilyrcolumbus.workers.dev'
 
 export interface EtsyTokens {
   accessToken: string
@@ -93,6 +94,32 @@ export async function fetchEtsyOrders(): Promise<Order[]> {
   }
   const data = await resp.json() as { orders: Order[] }
   return data.orders
+}
+
+// --- Listings (via the worker, which holds the Etsy refresh token) ---
+
+export interface EtsyListing {
+  id: number
+  title: string
+  state: string
+  quantity: number
+  price: number
+  currency: string
+  views: number
+  numFavorers: number
+  url: string
+}
+
+export interface EtsyListingsData {
+  listings: EtsyListing[]
+  counts: Record<string, number>
+  updatedAt: number
+}
+
+export async function fetchEtsyListings(): Promise<EtsyListingsData> {
+  const resp = await fetch(`${WORKER_URL}/etsy/listings`)
+  if (!resp.ok) throw new Error(`Etsy listings failed: ${resp.status}`)
+  return (await resp.json()) as EtsyListingsData
 }
 
 // --- PKCE helpers (client-side, robust on iOS Safari — no cookies) ---

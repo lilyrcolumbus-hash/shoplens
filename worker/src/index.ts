@@ -160,6 +160,60 @@ async function pollEtsy(env: Env): Promise<void> {
   await env.PUSH_KV.put('seen', JSON.stringify(currentIds))
 }
 
+// Refresh the stored Etsy refresh token → access token (rotates the refresh token in KV).
+async function getEtsyAccessToken(env: Env): Promise<string | null> {
+  const refresh = await env.PUSH_KV.get('etsy:refresh')
+  if (!refresh) return null
+  const tr = await fetch('https://api.etsy.com/v3/public/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', client_id: env.ETSY_KEYSTRING, refresh_token: refresh }),
+  })
+  if (!tr.ok) return null
+  const t = (await tr.json()) as { access_token: string; refresh_token?: string }
+  if (t.refresh_token) await env.PUSH_KV.put('etsy:refresh', t.refresh_token)
+  return t.access_token
+}
+
+interface EtsyListingOut {
+  id: number; title: string; state: string; quantity: number
+  price: number; currency: string; views: number; numFavorers: number; url: string
+}
+
+// Etsy shop listings: active + draft in detail, plus counts of every state.
+async function fetchEtsyListingsData(env: Env): Promise<{ listings: EtsyListingOut[]; counts: Record<string, number>; updatedAt: number } | null> {
+  const at = await getEtsyAccessToken(env)
+  if (!at) return null
+  const hdr = { 'x-api-key': `${env.ETSY_KEYSTRING}:${env.ETSY_SHARED_SECRET}`, Authorization: `Bearer ${at}` }
+  const base = `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/listings`
+  const listings: EtsyListingOut[] = []
+  const counts: Record<string, number> = {}
+  const detailStates = new Set(['active', 'draft'])
+  for (const state of ['active', 'draft', 'sold_out', 'inactive']) {
+    const r = await fetch(`${base}?state=${state}&limit=100`, { headers: hdr })
+    if (!r.ok) continue
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const j = (await r.json()) as { count?: number; results?: any[] }
+    counts[state] = j.count ?? 0
+    if (detailStates.has(state)) {
+      for (const l of j.results ?? []) {
+        listings.push({
+          id: l.listing_id,
+          title: l.title,
+          state: l.state,
+          quantity: Number(l.quantity ?? 0),
+          price: l.price ? Number(l.price.amount) / Number(l.price.divisor || 100) : 0,
+          currency: l.price?.currency_code ?? 'USD',
+          views: Number(l.views ?? 0),
+          numFavorers: Number(l.num_favorers ?? 0),
+          url: l.url ?? '',
+        })
+      }
+    }
+  }
+  return { listings, counts, updatedAt: Date.now() }
+}
+
 // ── Amazon SP-API ──────────────────────────────────────────────
 async function getAmazonAccessToken(env: Env): Promise<string | null> {
   const resp = await fetch('https://api.amazon.com/auth/o2/token', {
@@ -392,6 +446,20 @@ export default {
       const pendingReportId = await env.PUSH_KV.get('amz:traffic:reportId')
       const trafficTs = Number((await env.PUSH_KV.get('amz:traffic:ts')) || 0)
       return json({ ok: true, pendingReportId, trafficUpdated: trafficTs })
+    }
+
+    if (url.pathname === '/etsy/listings' && request.method === 'GET') {
+      const cached = await env.PUSH_KV.get('etsy:listings')
+      const ts = Number((await env.PUSH_KV.get('etsy:listings:ts')) || 0)
+      if (cached && Date.now() - ts < 30 * 60 * 1000) {
+        return new Response(cached, { headers: { 'Content-Type': 'application/json', ...CORS } })
+      }
+      const data = await fetchEtsyListingsData(env)
+      if (!data) return json({ error: 'etsy not connected' }, 503)
+      const body = JSON.stringify(data)
+      await env.PUSH_KV.put('etsy:listings', body)
+      await env.PUSH_KV.put('etsy:listings:ts', String(Date.now()))
+      return new Response(body, { headers: { 'Content-Type': 'application/json', ...CORS } })
     }
 
     return json({ service: 'shoplens-push', ok: true })

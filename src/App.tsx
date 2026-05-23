@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Bell, Search, Link2, Link2Off, RefreshCw, Check, ShoppingBag, ExternalLink, ChevronRight, ArrowLeft, BarChart3 } from 'lucide-react'
 import {
   type Order,
+  type EtsyListingsData,
   isConnected as isEtsyConnected,
   fetchEtsyOrders,
+  fetchEtsyListings,
   connectEtsy,
   clearTokens,
 } from './lib/etsy'
@@ -69,6 +71,60 @@ function fmtDate(iso: string): string {
   return isNaN(+d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function listingState(state: string): { label: string; cls: string } {
+  switch (state) {
+    case 'active': return { label: 'Active', cls: 'text-[#00d4c8]' }
+    case 'draft': return { label: 'Draft · not published', cls: 'text-[#ffb800]' }
+    case 'sold_out': return { label: 'Sold out', cls: 'text-[#ff4757]' }
+    case 'inactive': return { label: 'Inactive', cls: 'text-white/40' }
+    default: return { label: state, cls: 'text-white/40' }
+  }
+}
+
+// Etsy listings — status, stock, price, views, favorites. Real data from the worker.
+function EtsyListingsSection() {
+  const [data, setData] = useState<EtsyListingsData | null>(null)
+  const [err, setErr] = useState(false)
+  useEffect(() => {
+    fetchEtsyListings().then(setData).catch(() => setErr(true))
+  }, [])
+  return (
+    <div className="mt-8">
+      <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Listings</p>
+      {err ? (
+        <div className="glass p-4"><p className="text-sm text-white/50">Couldn't load listings.</p></div>
+      ) : !data ? (
+        <div className="glass p-4"><div className="shimmer h-10 w-full" /></div>
+      ) : (
+        <>
+          <div className="glass p-4 mb-3 text-sm text-white/55">
+            {data.counts.active ?? 0} active · {data.counts.draft ?? 0} draft · {data.counts.sold_out ?? 0} sold out
+          </div>
+          <div className="space-y-2">
+            {data.listings.map(l => {
+              const sb = listingState(l.state)
+              return (
+                <a key={l.id} href={l.url} target="_blank" rel="noopener noreferrer" className="glass pressable p-4 block">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-white font-medium text-sm flex-1 line-clamp-2">{l.title}</p>
+                    <span className="text-sm font-bold metric-gold tabular-nums shrink-0">${l.price.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center gap-x-3 gap-y-1 mt-2 text-xs text-white/45 flex-wrap">
+                    <span className={sb.cls}>● {sb.label}</span>
+                    <span>{l.quantity === 0 ? '🔴 Out of stock' : `Stock ${l.quantity}`}</span>
+                    <span>👁 {l.views} views</span>
+                    <span>♡ {l.numFavorers}</span>
+                  </div>
+                </a>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // In-app per-store dashboard — real orders for the tapped store, no mock data.
 function StoreDashboard({ store, orders, onBack }: { store: Store; orders: Order[]; onBack: () => void }) {
   const meta = STORE_META[store]
@@ -120,12 +176,14 @@ function StoreDashboard({ store, orders, onBack }: { store: Store; orders: Order
         </div>
       )}
 
+      {store === 'etsy' && <EtsyListingsSection />}
+
       {orderUrl && (
         <a
           href={orderUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="w-full px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center justify-center gap-2"
+          className="mt-6 w-full px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center justify-center gap-2"
         >
           Open {meta.label} order manager <ExternalLink size={16} />
         </a>
