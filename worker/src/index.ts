@@ -55,9 +55,35 @@ async function getSubs(env: Env): Promise<PushSub[]> {
   return JSON.parse((await env.PUSH_KV.get('subs')) || '[]')
 }
 
-async function sendPush(env: Env, sub: PushSub, message: object): Promise<number> {
+// App origin used for the notification's click-through target.
+const APP_ORIGIN = 'https://shoplens-7pi.pages.dev'
+
+interface PushMessage {
+  title: string
+  body: string
+  url?: string
+  count?: number
+}
+
+// Declarative Web Push (Safari 18.4+ / iOS 18.4+): the system shows the notification
+// AND sets the home-screen icon badge from `app_badge` — without running the service
+// worker, which is the reliable path on iOS. Because it's immutable (no `mutable`
+// flag), the SW `push` event does NOT fire, so there is no duplicate notification.
+function toDeclarative(message: PushMessage) {
+  return {
+    web_push: 8030,
+    notification: {
+      title: message.title,
+      body: message.body,
+      navigate: APP_ORIGIN + (message.url ?? '/'),
+      ...(typeof message.count === 'number' ? { app_badge: message.count } : {}),
+    },
+  }
+}
+
+async function sendPush(env: Env, sub: PushSub, message: PushMessage): Promise<number> {
   const payload = await buildPushPayload(
-    { data: JSON.stringify(message), options: { ttl: 120 } },
+    { data: JSON.stringify(toDeclarative(message)), options: { ttl: 120 } },
     sub,
     { subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC, privateKey: env.VAPID_PRIVATE },
   )
@@ -65,7 +91,7 @@ async function sendPush(env: Env, sub: PushSub, message: object): Promise<number
   return res.status
 }
 
-async function pushToAll(env: Env, message: object): Promise<number> {
+async function pushToAll(env: Env, message: PushMessage): Promise<number> {
   const subs = await getSubs(env)
   const stillValid: PushSub[] = []
   let sent = 0
