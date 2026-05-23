@@ -33,3 +33,22 @@ export async function fetchAmazonTraffic(): Promise<AmazonTraffic | 'pending'> {
   if (j.status === 'pending') return 'pending'
   return j as AmazonTraffic
 }
+
+// Amazon listings (status, stock, price) from the Merchant Listings report.
+export interface AmazonListing {
+  sku: string
+  asin: string
+  title: string
+  price: number
+  quantity: number
+  status: string
+  url: string
+}
+
+export async function fetchAmazonListings(): Promise<AmazonListing[] | 'pending'> {
+  const resp = await fetch(`${WORKER_URL}/amazon/listings`)
+  if (!resp.ok) throw new Error(`Amazon listings fetch failed: ${resp.status}`)
+  const j = (await resp.json()) as { status?: string; listings?: AmazonListing[] }
+  if (j.status === 'pending') return 'pending'
+  return j.listings ?? []
+}

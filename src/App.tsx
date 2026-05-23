@@ -10,7 +10,7 @@ import {
   clearTokens,
 } from './lib/etsy'
 import { enablePush, isPushEnabled, sendTestPush } from './lib/push'
-import { fetchAmazonOrders, fetchAmazonTraffic, type AmazonTraffic } from './lib/amazon'
+import { fetchAmazonOrders, fetchAmazonTraffic, fetchAmazonListings, type AmazonTraffic, type AmazonListing } from './lib/amazon'
 
 type Store = Order['store']
 type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
@@ -125,6 +125,59 @@ function EtsyListingsSection() {
   )
 }
 
+function amazonListingState(status: string): { label: string; cls: string } {
+  const s = (status || '').toLowerCase()
+  if (s === 'active') return { label: 'Active', cls: 'text-[#00d4c8]' }
+  if (s === 'inactive') return { label: 'Inactive', cls: 'text-[#ff4757]' }
+  if (s.includes('incomplete')) return { label: 'Incomplete', cls: 'text-[#ffb800]' }
+  return { label: status || 'Unknown', cls: 'text-white/40' }
+}
+
+// Amazon listings — status, stock, price. Real data from the Merchant Listings report.
+function AmazonListingsSection() {
+  const [data, setData] = useState<AmazonListing[] | 'pending' | null>(null)
+  const [err, setErr] = useState(false)
+  useEffect(() => {
+    fetchAmazonListings().then(setData).catch(() => setErr(true))
+  }, [])
+  return (
+    <div className="mt-8">
+      <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Listings</p>
+      {err ? (
+        <div className="glass p-4"><p className="text-sm text-white/50">Couldn't load listings.</p></div>
+      ) : data === null ? (
+        <div className="glass p-4"><div className="shimmer h-10 w-full" /></div>
+      ) : data === 'pending' ? (
+        <div className="glass p-4"><p className="text-sm text-white/55">Generating your Amazon listings report… this takes a few minutes the first time. Reopen shortly.</p></div>
+      ) : data.length === 0 ? (
+        <div className="glass p-4"><p className="text-sm text-white/50">No listings found.</p></div>
+      ) : (
+        <>
+          <div className="glass p-4 mb-3 text-sm text-white/55">{data.length} listing{data.length === 1 ? '' : 's'}</div>
+          <div className="space-y-2">
+            {data.map(l => {
+              const sb = amazonListingState(l.status)
+              return (
+                <a key={l.sku || l.asin} href={l.url || undefined} target="_blank" rel="noopener noreferrer" className="glass pressable p-4 block">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-white font-medium text-sm flex-1 line-clamp-2">{l.title || l.sku}</p>
+                    {l.price > 0 && <span className="text-sm font-bold metric-gold tabular-nums shrink-0">${l.price.toFixed(2)}</span>}
+                  </div>
+                  <div className="flex items-center gap-x-3 gap-y-1 mt-2 text-xs text-white/45 flex-wrap">
+                    <span className={sb.cls}>● {sb.label}</span>
+                    <span>{l.quantity === 0 ? '🔴 Out of stock' : `Stock ${l.quantity}`}</span>
+                    {l.asin && <span>{l.asin}</span>}
+                  </div>
+                </a>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // In-app per-store dashboard — real orders for the tapped store, no mock data.
 function StoreDashboard({ store, orders, onBack }: { store: Store; orders: Order[]; onBack: () => void }) {
   const meta = STORE_META[store]
@@ -177,6 +230,7 @@ function StoreDashboard({ store, orders, onBack }: { store: Store; orders: Order
       )}
 
       {store === 'etsy' && <EtsyListingsSection />}
+      {store === 'amazon' && <AmazonListingsSection />}
 
       {orderUrl && (
         <a

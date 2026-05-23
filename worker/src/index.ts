@@ -389,6 +389,83 @@ async function refreshTraffic(env: Env): Promise<void> {
   }
 }
 
+// ── Amazon merchant listings report (async, TSV) ──────────────────────
+interface AmzListingOut {
+  sku: string; asin: string; title: string; price: number; quantity: number; status: string; url: string
+}
+
+function parseMerchantListingsTsv(text: string): { listings: AmzListingOut[]; headers: string } {
+  const lines = text.split(/\r?\n/).filter(l => l.length)
+  if (!lines.length) return { listings: [], headers: '' }
+  const headers = lines[0].split('\t').map(h => h.trim().toLowerCase())
+  const col = (name: string) => headers.indexOf(name)
+  const iName = col('item-name')
+  const iSku = col('seller-sku')
+  const iPrice = col('price')
+  const iQty = col('quantity')
+  const iAsin = col('asin1') >= 0 ? col('asin1') : col('product-id')
+  const iStatus = col('status')
+  const listings: AmzListingOut[] = []
+  for (let i = 1; i < lines.length; i++) {
+    const c = lines[i].split('\t')
+    const asin = iAsin >= 0 ? (c[iAsin] ?? '').trim() : ''
+    listings.push({
+      sku: iSku >= 0 ? (c[iSku] ?? '').trim() : '',
+      asin,
+      title: iName >= 0 ? (c[iName] ?? '').trim() : '',
+      price: iPrice >= 0 ? Number(c[iPrice]) || 0 : 0,
+      quantity: iQty >= 0 ? Number(c[iQty]) || 0 : 0,
+      status: iStatus >= 0 ? (c[iStatus] ?? '').trim() : '',
+      url: asin ? `https://www.amazon.com/dp/${asin}` : '',
+    })
+  }
+  return { listings, headers: lines[0] }
+}
+
+// State machine across cron ticks (TSV report takes minutes to generate).
+async function refreshAmzListings(env: Env): Promise<void> {
+  const at = await getAmazonAccessToken(env)
+  if (!at) return
+  const hdr = { 'x-amz-access-token': at }
+  const pendingId = await env.PUSH_KV.get('amz:listings:reportId')
+
+  if (pendingId) {
+    const rr = await fetch(`${AMAZON_SP_ENDPOINT}/reports/2021-06-30/reports/${pendingId}`, { headers: hdr })
+    if (!rr.ok) { await env.PUSH_KV.delete('amz:listings:reportId'); return }
+    const rep = (await rr.json()) as { processingStatus?: string; reportDocumentId?: string }
+    if (rep.processingStatus === 'DONE' && rep.reportDocumentId) {
+      const dr = await fetch(`${AMAZON_SP_ENDPOINT}/reports/2021-06-30/documents/${rep.reportDocumentId}`, { headers: hdr })
+      if (dr.ok) {
+        const doc = (await dr.json()) as { url: string; compressionAlgorithm?: string }
+        const resp = await fetch(doc.url)
+        const text = doc.compressionAlgorithm === 'GZIP'
+          ? await new Response(resp.body!.pipeThrough(new DecompressionStream('gzip'))).text()
+          : await resp.text()
+        const parsed = parseMerchantListingsTsv(text)
+        await env.PUSH_KV.put('amz:listings', JSON.stringify({ listings: parsed.listings, updatedAt: Date.now() }))
+        await env.PUSH_KV.put('amz:listings:ts', String(Date.now()))
+      }
+      await env.PUSH_KV.delete('amz:listings:reportId')
+    } else if (rep.processingStatus === 'FATAL' || rep.processingStatus === 'CANCELLED') {
+      await env.PUSH_KV.delete('amz:listings:reportId')
+    }
+    return
+  }
+
+  const ts = Number((await env.PUSH_KV.get('amz:listings:ts')) || 0)
+  if (Date.now() - ts > 6 * 3600 * 1000) {
+    const r = await fetch(`${AMAZON_SP_ENDPOINT}/reports/2021-06-30/reports`, {
+      method: 'POST',
+      headers: { ...hdr, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reportType: 'GET_MERCHANT_LISTINGS_ALL_DATA', marketplaceIds: env.AMAZON_MARKETPLACES.split(',') }),
+    })
+    if (r.ok) {
+      const j = (await r.json()) as { reportId?: string }
+      if (j.reportId) await env.PUSH_KV.put('amz:listings:reportId', j.reportId)
+    }
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS })
@@ -438,14 +515,28 @@ export default {
       return json({ status: 'pending' })
     }
 
+    if (url.pathname === '/amazon/listings' && request.method === 'GET') {
+      const cached = await env.PUSH_KV.get('amz:listings')
+      if (cached) return new Response(cached, { headers: { 'Content-Type': 'application/json', ...CORS } })
+      await refreshAmzListings(env) // kick off generation; data lands on a later cron tick
+      return json({ status: 'pending' })
+    }
+
     if (url.pathname === '/poll' && request.method === 'POST') {
       // Manual trigger for testing both polls + traffic state machine.
       await pollEtsy(env)
       await pollAmazon(env)
       await refreshTraffic(env)
-      const pendingReportId = await env.PUSH_KV.get('amz:traffic:reportId')
+      await refreshAmzListings(env)
       const trafficTs = Number((await env.PUSH_KV.get('amz:traffic:ts')) || 0)
-      return json({ ok: true, pendingReportId, trafficUpdated: trafficTs })
+      const listingsTs = Number((await env.PUSH_KV.get('amz:listings:ts')) || 0)
+      return json({
+        ok: true,
+        trafficReportId: await env.PUSH_KV.get('amz:traffic:reportId'),
+        trafficUpdated: trafficTs,
+        listingsReportId: await env.PUSH_KV.get('amz:listings:reportId'),
+        listingsUpdated: listingsTs,
+      })
     }
 
     if (url.pathname === '/etsy/listings' && request.method === 'GET') {
@@ -469,5 +560,6 @@ export default {
     await pollEtsy(env)
     await pollAmazon(env)
     await refreshTraffic(env).catch(() => {})
+    await refreshAmzListings(env).catch(() => {})
   },
 }
