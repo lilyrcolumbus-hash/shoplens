@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Bell, Search, Link2, Link2Off, RefreshCw, Check, ShoppingBag, ExternalLink } from 'lucide-react'
+import { Bell, Search, Link2, Link2Off, RefreshCw, Check, ShoppingBag, ExternalLink, ChevronRight, ArrowLeft } from 'lucide-react'
 import {
   type Order,
   isConnected as isEtsyConnected,
@@ -55,6 +55,85 @@ function useCountUp(target: number, duration = 900): number {
   return value
 }
 
+function statusBadge(status: Order['status']): { icon: string; label: string; cls: string } {
+  switch (status) {
+    case 'unshipped': return { icon: '🟠', label: 'To ship', cls: 'text-[#ffb800]' }
+    case 'shipped':   return { icon: '✅', label: 'Shipped', cls: 'text-[#00d4c8]' }
+    case 'completed': return { icon: '✅', label: 'Completed', cls: 'text-[#00d4c8]' }
+    case 'canceled':  return { icon: '⊘', label: 'Canceled', cls: 'text-white/40' }
+  }
+}
+
+function fmtDate(iso: string): string {
+  const d = new Date(iso)
+  return isNaN(+d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// In-app per-store dashboard — real orders for the tapped store, no mock data.
+function StoreDashboard({ store, orders, onBack }: { store: Store; orders: Order[]; onBack: () => void }) {
+  const meta = STORE_META[store]
+  const orderUrl = STORE_ORDER_URLS[store]
+  const toShip = orders.filter(o => o.status === 'unshipped').length
+  const sorted = [...orders].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+  return (
+    <div className="animate-slide-up">
+      <button
+        onClick={onBack}
+        className="mb-5 inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white active:scale-95 transition"
+      >
+        <ArrowLeft size={16} /> Back
+      </button>
+
+      <div className="flex items-center gap-3 mb-1">
+        <span className="text-3xl">{meta.emoji}</span>
+        <h2 className="text-2xl font-bold text-white">{meta.label}</h2>
+      </div>
+      <p className="text-white/45 mb-6">
+        {toShip > 0 ? `${toShip} order${toShip === 1 ? '' : 's'} to ship` : 'No orders to ship right now'}
+      </p>
+
+      {sorted.length === 0 ? (
+        <div className="glass p-10 text-center mb-6">
+          <p className="text-white/50">No orders yet.</p>
+        </div>
+      ) : (
+        <div className="space-y-2 mb-6">
+          {sorted.map(o => {
+            const st = statusBadge(o.status)
+            return (
+              <div key={o.id} className="glass p-4 flex items-start gap-3">
+                <span className="text-lg leading-none mt-0.5">{st.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-medium truncate">{o.product}</p>
+                  <p className="text-sm text-white/50 mt-0.5">
+                    {o.buyer} · ${o.amount.toFixed(2)}
+                    {o.currency && o.currency !== 'USD' ? ` ${o.currency}` : ''} ·{' '}
+                    <span className={st.cls}>{st.label}</span>
+                  </p>
+                </div>
+                {fmtDate(o.createdAt) && (
+                  <span className="text-xs text-white/35 whitespace-nowrap mt-0.5">{fmtDate(o.createdAt)}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {orderUrl && (
+        <a
+          href={orderUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center justify-center gap-2"
+        >
+          Open {meta.label} order manager <ExternalLink size={16} />
+        </a>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const [notifEnabled, setNotifEnabled] = useState(false)
   const [etsyConnected, setEtsyConnected] = useState<boolean>(() => isEtsyConnected())
@@ -64,6 +143,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [hasLoaded, setHasLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedStore, setSelectedStore] = useState<Store | null>(null)
   const prevOrderIds = useRef<Set<string>>(new Set())
 
   const loadEtsy = useCallback(async (notifyOnNew = false) => {
@@ -228,6 +308,14 @@ export default function App() {
           </div>
         )}
 
+        {selectedStore ? (
+          <StoreDashboard
+            store={selectedStore}
+            orders={selectedStore === 'etsy' ? etsyOrders : amazonOrders}
+            onBack={() => setSelectedStore(null)}
+          />
+        ) : (
+        <>
         {/* HERO: new-orders indicator (no order details — those live in each store) */}
         {!anyConnected ? (
           <div className="glass glass-glow p-10 text-center animate-slide-up mb-8">
@@ -292,9 +380,8 @@ export default function App() {
               const meta = STORE_META[store]
               const connected =
                 (store === 'etsy' && etsyConnected) || (store === 'amazon' && amazonConnected)
-              const orderUrl = STORE_ORDER_URLS[store]
               const openStore = () => {
-                if (connected && orderUrl) window.open(orderUrl, '_blank', 'noopener')
+                if (connected) setSelectedStore(store)
               }
               return (
                 <div
@@ -327,7 +414,7 @@ export default function App() {
                         )}
                       </div>
                       <span className="mt-1 inline-flex items-center gap-1 text-xs text-white/40">
-                        View orders <ExternalLink size={11} />
+                        Open dashboard <ChevronRight size={12} />
                       </span>
                     </>
                   ) : meta.conn === 'connectable' ? (
@@ -348,6 +435,8 @@ export default function App() {
             })}
           </div>
         </section>
+        </>
+        )}
       </main>
     </div>
   )
