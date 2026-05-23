@@ -236,6 +236,105 @@ async function pollAmazon(env: Env): Promise<void> {
   await env.PUSH_KV.put('amz:seen', JSON.stringify(orders.map(o => o.id)))
 }
 
+// ── Amazon Sales & Traffic report (async: request → poll → download → cache) ──
+const US_MARKETPLACE = 'ATVPDKIKX0DER'
+
+interface STSummary {
+  updatedAt: number
+  rangeDays: number
+  totals: {
+    sessions: number; pageViews: number; units: number; sales: number
+    currency: string; conversionPct: number; buyBoxPct: number
+  }
+  daily: Array<{ date: string; sessions: number; units: number; sales: number }>
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function summarizeTraffic(data: any): STSummary {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: any[] = Array.isArray(data?.salesAndTrafficByDate) ? data.salesAndTrafficByDate : []
+  let sessions = 0, pageViews = 0, units = 0, sales = 0, buyBoxWeighted = 0
+  let currency = 'USD'
+  const daily: STSummary['daily'] = []
+  for (const row of rows) {
+    const t = row.trafficByDate ?? {}
+    const s = row.salesByDate ?? {}
+    const sess = Number(t.sessions ?? 0)
+    const u = Number(s.unitsOrdered ?? 0)
+    const amt = Number(s.orderedProductSales?.amount ?? 0)
+    if (s.orderedProductSales?.currencyCode) currency = s.orderedProductSales.currencyCode
+    sessions += sess; pageViews += Number(t.pageViews ?? 0); units += u; sales += amt
+    buyBoxWeighted += Number(t.buyBoxPercentage ?? 0) * (sess || 1)
+    daily.push({ date: String(row.date ?? ''), sessions: sess, units: u, sales: amt })
+  }
+  return {
+    updatedAt: Date.now(),
+    rangeDays: rows.length,
+    totals: {
+      sessions, pageViews, units, sales, currency,
+      conversionPct: sessions ? (units / sessions) * 100 : 0,
+      buyBoxPct: sessions ? buyBoxWeighted / sessions : 0,
+    },
+    daily,
+  }
+}
+
+async function requestSalesTrafficReport(env: Env, at: string): Promise<string | null> {
+  const end = new Date(Date.now() - 2 * 86400000) // Sales & Traffic lags ~2 days
+  const start = new Date(end.getTime() - 28 * 86400000)
+  const r = await fetch(`${AMAZON_SP_ENDPOINT}/reports/2021-06-30/reports`, {
+    method: 'POST',
+    headers: { 'x-amz-access-token': at, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'GET_SALES_AND_TRAFFIC_REPORT',
+      marketplaceIds: [US_MARKETPLACE],
+      dataStartTime: start.toISOString(),
+      dataEndTime: end.toISOString(),
+      reportOptions: { dateGranularity: 'DAY', asinGranularity: 'PARENT' },
+    }),
+  })
+  if (!r.ok) return null
+  const j = (await r.json()) as { reportId?: string }
+  return j.reportId ?? null
+}
+
+// State machine across cron ticks (reports take minutes to generate).
+async function refreshTraffic(env: Env): Promise<void> {
+  const at = await getAmazonAccessToken(env)
+  if (!at) return
+  const hdr = { 'x-amz-access-token': at }
+  const pendingId = await env.PUSH_KV.get('amz:traffic:reportId')
+
+  if (pendingId) {
+    const rr = await fetch(`${AMAZON_SP_ENDPOINT}/reports/2021-06-30/reports/${pendingId}`, { headers: hdr })
+    if (!rr.ok) { await env.PUSH_KV.delete('amz:traffic:reportId'); return }
+    const rep = (await rr.json()) as { processingStatus?: string; reportDocumentId?: string }
+    if (rep.processingStatus === 'DONE' && rep.reportDocumentId) {
+      const dr = await fetch(`${AMAZON_SP_ENDPOINT}/reports/2021-06-30/documents/${rep.reportDocumentId}`, { headers: hdr })
+      if (dr.ok) {
+        const doc = (await dr.json()) as { url: string; compressionAlgorithm?: string }
+        const resp = await fetch(doc.url)
+        const text = doc.compressionAlgorithm === 'GZIP'
+          ? await new Response(resp.body!.pipeThrough(new DecompressionStream('gzip'))).text()
+          : await resp.text()
+        await env.PUSH_KV.put('amz:traffic', JSON.stringify(summarizeTraffic(JSON.parse(text))))
+        await env.PUSH_KV.put('amz:traffic:ts', String(Date.now()))
+      }
+      await env.PUSH_KV.delete('amz:traffic:reportId')
+    } else if (rep.processingStatus === 'FATAL' || rep.processingStatus === 'CANCELLED') {
+      await env.PUSH_KV.delete('amz:traffic:reportId')
+    }
+    return
+  }
+
+  // No report in flight: request a fresh one if the cache is stale (>12h).
+  const ts = Number((await env.PUSH_KV.get('amz:traffic:ts')) || 0)
+  if (Date.now() - ts > 12 * 3600 * 1000) {
+    const id = await requestSalesTrafficReport(env, at)
+    if (id) await env.PUSH_KV.put('amz:traffic:reportId', id)
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS })
@@ -278,11 +377,21 @@ export default {
       return new Response(cached, { headers: { 'Content-Type': 'application/json', ...CORS } })
     }
 
+    if (url.pathname === '/amazon/traffic' && request.method === 'GET') {
+      const cached = await env.PUSH_KV.get('amz:traffic')
+      if (cached) return new Response(cached, { headers: { 'Content-Type': 'application/json', ...CORS } })
+      await refreshTraffic(env) // kick off generation; data lands on a later cron tick
+      return json({ status: 'pending' })
+    }
+
     if (url.pathname === '/poll' && request.method === 'POST') {
-      // Manual trigger for testing both polls.
+      // Manual trigger for testing both polls + traffic state machine.
       await pollEtsy(env)
       await pollAmazon(env)
-      return json({ ok: true })
+      await refreshTraffic(env)
+      const pendingReportId = await env.PUSH_KV.get('amz:traffic:reportId')
+      const trafficTs = Number((await env.PUSH_KV.get('amz:traffic:ts')) || 0)
+      return json({ ok: true, pendingReportId, trafficUpdated: trafficTs })
     }
 
     return json({ service: 'shoplens-push', ok: true })
@@ -291,5 +400,6 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
     await pollEtsy(env)
     await pollAmazon(env)
+    await refreshTraffic(env).catch(() => {})
   },
 }

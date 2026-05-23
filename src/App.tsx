@@ -8,7 +8,7 @@ import {
   clearTokens,
 } from './lib/etsy'
 import { enablePush, isPushEnabled, sendTestPush } from './lib/push'
-import { fetchAmazonOrders } from './lib/amazon'
+import { fetchAmazonOrders, fetchAmazonTraffic, type AmazonTraffic } from './lib/amazon'
 
 type Store = Order['store']
 type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
@@ -171,9 +171,72 @@ function health(daysSince: number | null): { dot: string; label: string } {
   return { dot: '🔴', label: `Last sale ${daysSince}d ago` }
 }
 
+function timeAgo(ms: number): string {
+  const s = Math.floor((Date.now() - ms) / 1000)
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
+}
+
+// Amazon Sales & Traffic diagnosis — answers "why am I not selling?" from real SP-API data.
+function AmazonTrafficSection({ traffic }: { traffic: AmazonTraffic | 'pending' | null }) {
+  if (traffic === null) return null
+  if (traffic === 'pending') {
+    return (
+      <>
+        <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">📦 Amazon · Traffic &amp; Conversion</p>
+        <div className="glass p-4 mb-6">
+          <p className="text-sm text-white/55">Generating your Amazon traffic report… this takes a few minutes the first time. Reopen Performance shortly.</p>
+        </div>
+      </>
+    )
+  }
+  const t = traffic.totals
+  const conv = t.conversionPct
+  const perDay = t.sessions / Math.max(1, traffic.rangeDays)
+  let dot = '🟢'
+  let diag = ''
+  if (t.sessions === 0) {
+    dot = '🔴'
+    diag = 'No traffic: nobody viewed your Amazon listings in this period. The bottleneck is visibility — getting found (ads, keywords, more listings).'
+  } else if (perDay < 2 && conv >= 5) {
+    dot = '🔴'
+    diag = `Traffic problem, not conversion: only ${t.sessions} visits in ${traffic.rangeDays} days — but ${conv.toFixed(1)}% of visitors buy, which is healthy. Your listings work; you need more eyes on them (ads, keywords, more products).`
+  } else if (conv < 3) {
+    dot = '🟡'
+    diag = `Conversion problem: people visit (${t.sessions}) but few buy (${conv.toFixed(1)}%). Look at price, main image, reviews, and Buy Box.`
+  } else {
+    dot = '🟢'
+    diag = `${t.sessions} visits and ${conv.toFixed(1)}% conversion in ${traffic.rangeDays} days — both reasonable. Grow by scaling traffic.`
+  }
+  const cell = (label: string, value: string, sub?: string) => (
+    <div className="glass p-4">
+      <p className="text-xs text-white/40 mb-1">{label}</p>
+      <p className="text-lg font-bold text-white tabular-nums">{value}</p>
+      {sub && <p className="text-[10px] text-white/30 mt-0.5">{sub}</p>}
+    </div>
+  )
+  return (
+    <>
+      <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">📦 Amazon · Traffic &amp; Conversion</p>
+      <div className="glass p-4 mb-3 flex gap-3 items-start">
+        <span className="text-xl leading-none">{dot}</span>
+        <p className="text-sm text-white/75">{diag}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 mb-2">
+        {cell('Visits (sessions)', String(t.sessions), `${traffic.rangeDays}d · ~${perDay.toFixed(1)}/day`)}
+        {cell('Conversion', `${conv.toFixed(1)}%`, 'visitors who bought')}
+        {cell('Page views', String(t.pageViews))}
+        {cell('Buy Box', `${t.buyBoxPct.toFixed(0)}%`)}
+      </div>
+      <p className="text-[10px] text-white/30 mb-6">Updated {timeAgo(traffic.updatedAt)} · last {traffic.rangeDays} days (US marketplace)</p>
+    </>
+  )
+}
+
 // Performance analytics from real orders. Revenue is grouped by currency (Amazon spans
 // MX/CA/BR/US marketplaces) — we never sum across currencies; we show the primary one.
-function PerformanceView({ orders, onBack }: { orders: Order[]; onBack: () => void }) {
+function PerformanceView({ orders, traffic, onBack }: { orders: Order[]; traffic: AmazonTraffic | 'pending' | null; onBack: () => void }) {
   const active = orders.filter(o => o.status !== 'canceled')
 
   const revByCcy = new Map<string, number>()
@@ -226,6 +289,8 @@ function PerformanceView({ orders, onBack }: { orders: Order[]; onBack: () => vo
         <h2 className="text-2xl font-bold text-white">Performance</h2>
       </div>
       <p className="text-white/45 mb-6">Recent orders (Etsy + Amazon) · revenue in {primaryCcy}</p>
+
+      <AmazonTrafficSection traffic={traffic} />
 
       {active.length === 0 ? (
         <div className="glass p-10 text-center"><p className="text-white/50">No orders to analyze yet.</p></div>
@@ -353,6 +418,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [selectedStore, setSelectedStore] = useState<Store | null>(null)
   const [showPerf, setShowPerf] = useState(false)
+  const [amazonTraffic, setAmazonTraffic] = useState<AmazonTraffic | 'pending' | null>(null)
   const prevOrderIds = useRef<Set<string>>(new Set())
 
   const loadEtsy = useCallback(async (notifyOnNew = false) => {
@@ -425,6 +491,10 @@ export default function App() {
     const interval = setInterval(loadAmazon, 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [loadAmazon])
+
+  useEffect(() => {
+    fetchAmazonTraffic().then(setAmazonTraffic).catch(() => {})
+  }, [])
 
   useEffect(() => {
     isPushEnabled().then(setNotifEnabled)
@@ -527,7 +597,7 @@ export default function App() {
         )}
 
         {showPerf ? (
-          <PerformanceView orders={allOrders} onBack={() => setShowPerf(false)} />
+          <PerformanceView orders={allOrders} traffic={amazonTraffic} onBack={() => setShowPerf(false)} />
         ) : selectedStore ? (
           <StoreDashboard
             store={selectedStore}
