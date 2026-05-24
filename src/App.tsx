@@ -213,7 +213,7 @@ function StoreDashboard({ store, orders, onBack }: { store: Store; orders: Order
               <div key={o.id} className="glass p-4 flex items-start gap-3">
                 <span className="text-lg leading-none mt-0.5">{st.icon}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-medium truncate">{o.product}</p>
+                  <p className="text-white font-medium line-clamp-2">{o.product}</p>
                   <p className="text-sm text-white/50 mt-0.5">
                     {o.buyer} · ${o.amount.toFixed(2)}
                     {o.currency && o.currency !== 'USD' ? ` ${o.currency}` : ''} ·{' '}
