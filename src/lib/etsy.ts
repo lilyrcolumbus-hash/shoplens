@@ -11,7 +11,7 @@ export interface EtsyTokens {
 
 export interface Order {
   id: string
-  store: 'etsy' | 'amazon' | 'tiktok' | 'whatnot'
+  store: 'etsy' | 'amazon' | 'tiktok'
   product: string
   buyer: string
   amount: number
