@@ -165,7 +165,8 @@ function AmazonListingsSection() {
                   <div className="flex items-center gap-x-3 gap-y-1 mt-2 text-xs text-white/45 flex-wrap">
                     <span className={sb.cls}>● {sb.label}</span>
                     <span>{l.quantity === 0 ? '🔴 Out of stock' : `Stock ${l.quantity}`}</span>
-                    {l.asin && <span>{l.asin}</span>}
+                    {typeof l.sessions === 'number' && <span>👁 {l.sessions} sessions</span>}
+                    {typeof l.conversionPct === 'number' && (l.sessions ?? 0) > 0 && <span>{l.conversionPct.toFixed(1)}% conv</span>}
                   </div>
                 </a>
               )

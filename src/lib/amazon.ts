@@ -43,6 +43,10 @@ export interface AmazonListing {
   quantity: number
   status: string
   url: string
+  // Per-product traffic (last ~30d), joined from the Sales & Traffic report when available.
+  sessions?: number
+  pageViews?: number
+  conversionPct?: number
 }
 
 export async function fetchAmazonListings(): Promise<AmazonListing[] | 'pending'> {

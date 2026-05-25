@@ -333,6 +333,27 @@ function summarizeTraffic(data: any): STSummary {
   }
 }
 
+// Per-product (per-ASIN) traffic from the same report: sessions, page views, conversion.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractByAsin(data: any): Record<string, { sessions: number; pageViews: number; units: number; conversionPct: number }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: any[] = Array.isArray(data?.salesAndTrafficByAsin) ? data.salesAndTrafficByAsin : []
+  const map: Record<string, { sessions: number; pageViews: number; units: number; conversionPct: number }> = {}
+  for (const row of rows) {
+    const asin = row.childAsin || row.parentAsin
+    if (!asin) continue
+    const t = row.trafficByAsin ?? {}
+    const s = row.salesByAsin ?? {}
+    map[asin] = {
+      sessions: Number(t.sessions ?? 0),
+      pageViews: Number(t.pageViews ?? 0),
+      units: Number(s.unitsOrdered ?? 0),
+      conversionPct: Number(t.unitSessionPercentage ?? 0),
+    }
+  }
+  return map
+}
+
 async function requestSalesTrafficReport(env: Env, at: string): Promise<string | null> {
   const end = new Date(Date.now() - 2 * 86400000) // Sales & Traffic lags ~2 days
   const start = new Date(end.getTime() - 28 * 86400000)
@@ -344,7 +365,7 @@ async function requestSalesTrafficReport(env: Env, at: string): Promise<string |
       marketplaceIds: [US_MARKETPLACE],
       dataStartTime: start.toISOString(),
       dataEndTime: end.toISOString(),
-      reportOptions: { dateGranularity: 'DAY', asinGranularity: 'PARENT' },
+      reportOptions: { dateGranularity: 'DAY', asinGranularity: 'CHILD' },
     }),
   })
   if (!r.ok) return null
@@ -371,7 +392,9 @@ async function refreshTraffic(env: Env): Promise<void> {
         const text = doc.compressionAlgorithm === 'GZIP'
           ? await new Response(resp.body!.pipeThrough(new DecompressionStream('gzip'))).text()
           : await resp.text()
-        await env.PUSH_KV.put('amz:traffic', JSON.stringify(summarizeTraffic(JSON.parse(text))))
+        const parsed = JSON.parse(text)
+        await env.PUSH_KV.put('amz:traffic', JSON.stringify(summarizeTraffic(parsed)))
+        await env.PUSH_KV.put('amz:traffic:byasin', JSON.stringify(extractByAsin(parsed)))
         await env.PUSH_KV.put('amz:traffic:ts', String(Date.now()))
       }
       await env.PUSH_KV.delete('amz:traffic:reportId')
@@ -517,9 +540,19 @@ export default {
 
     if (url.pathname === '/amazon/listings' && request.method === 'GET') {
       const cached = await env.PUSH_KV.get('amz:listings')
-      if (cached) return new Response(cached, { headers: { 'Content-Type': 'application/json', ...CORS } })
-      await refreshAmzListings(env) // kick off generation; data lands on a later cron tick
-      return json({ status: 'pending' })
+      if (!cached) {
+        await refreshAmzListings(env) // kick off generation; data lands on a later cron tick
+        return json({ status: 'pending' })
+      }
+      // Enrich each listing with its per-ASIN traffic (sessions/conversion) from Sales & Traffic.
+      const byasin = JSON.parse((await env.PUSH_KV.get('amz:traffic:byasin')) || '{}') as
+        Record<string, { sessions: number; pageViews: number; conversionPct: number }>
+      const data = JSON.parse(cached) as { listings: Array<Record<string, unknown>>; updatedAt: number }
+      for (const l of data.listings ?? []) {
+        const tr = byasin[l.asin as string]
+        if (tr) { l.sessions = tr.sessions; l.pageViews = tr.pageViews; l.conversionPct = tr.conversionPct }
+      }
+      return new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json', ...CORS } })
     }
 
     if (url.pathname === '/poll' && request.method === 'POST') {
