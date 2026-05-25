@@ -80,6 +80,35 @@ function listingState(state: string): { label: string; cls: string } {
   }
 }
 
+// One concrete next step per Etsy product.
+function etsyProductAdvice(l: { state: string; quantity: number; views: number }): string | null {
+  if (l.state === 'draft') return 'Publish to start selling'
+  if (l.quantity === 0) return 'Restock'
+  if (l.state === 'active' && l.views > 50) return 'Gets views but few sales — improve photos, price, reviews'
+  if (l.state === 'active') return 'Low visibility — improve tags/SEO, share on Pinterest'
+  return null
+}
+
+// Store-level "what to do" for Etsy.
+function EtsyStoreAdvice({ data }: { data: EtsyListingsData }) {
+  const active = data.counts.active ?? 0
+  const draft = data.counts.draft ?? 0
+  const totalViews = data.listings.reduce((s, l) => s + (l.views ?? 0), 0)
+  const parts: string[] = []
+  parts.push(totalViews > 100
+    ? 'your listings get views but few sales — improve photos, price, title keywords, and get reviews'
+    : 'low visibility — improve tags/SEO and share on Pinterest')
+  if (draft > 0) parts.push(`publish your ${draft} draft${draft === 1 ? '' : 's'}`)
+  if (active < 5) parts.push('add more products to widen your reach')
+  return (
+    <div className="glass p-4 mb-3 border-l-2 border-[#ffb800]/60">
+      <p className="text-sm text-white/80">
+        🟡 <span className="font-semibold">Conversion is your focus:</span> {parts.join('; ')}.
+      </p>
+    </div>
+  )
+}
+
 // Etsy listings — status, stock, price, views, favorites. Real data from the worker.
 function EtsyListingsSection() {
   const [data, setData] = useState<EtsyListingsData | null>(null)
@@ -96,12 +125,14 @@ function EtsyListingsSection() {
         <div className="glass p-4"><div className="shimmer h-10 w-full" /></div>
       ) : (
         <>
+          <EtsyStoreAdvice data={data} />
           <div className="glass p-4 mb-3 text-sm text-white/55">
             {data.counts.active ?? 0} active · {data.counts.draft ?? 0} draft · {data.counts.sold_out ?? 0} sold out
           </div>
           <div className="space-y-2">
             {data.listings.map(l => {
               const sb = listingState(l.state)
+              const advice = etsyProductAdvice(l)
               return (
                 <a key={l.id} href={l.url} target="_blank" rel="noopener noreferrer" className="glass pressable p-4 block">
                   <div className="flex items-start justify-between gap-3">
@@ -114,6 +145,7 @@ function EtsyListingsSection() {
                     <span>👁 {l.views} views</span>
                     <span>♡ {l.numFavorers}</span>
                   </div>
+                  {advice && <p className="text-xs text-[#ffb800] mt-1.5">→ {advice}</p>}
                 </a>
               )
             })}
@@ -130,6 +162,38 @@ function amazonListingState(status: string): { label: string; cls: string } {
   if (s === 'inactive') return { label: 'Inactive', cls: 'text-[#ff4757]' }
   if (s.includes('incomplete')) return { label: 'Incomplete', cls: 'text-[#ffb800]' }
   return { label: status || 'Unknown', cls: 'text-white/40' }
+}
+
+// One concrete next step per Amazon product, from its real signals.
+function amazonProductAdvice(l: AmazonListing): string | null {
+  const s = (l.status || '').toLowerCase()
+  if (s !== 'active') return 'Not active — fix the listing to make it sellable'
+  if (l.quantity === 0) return 'Out of stock — restock'
+  const sess = l.sessions ?? 0
+  if (sess < 3) return 'Almost no traffic — add keywords to the title / run ads'
+  if ((l.conversionPct ?? 0) < 5) return 'Visited but not converting — improve main image, price, reviews'
+  return null
+}
+
+// Store-level "what to do" for Amazon, from the aggregate of all listings.
+function AmazonStoreAdvice({ listings }: { listings: AmazonListing[] }) {
+  const totalSessions = listings.reduce((s, l) => s + (l.sessions ?? 0), 0)
+  const oos = listings.filter(l => l.quantity === 0).length
+  const trafficLow = totalSessions < 60 // < ~2 visits/day across the whole shop
+  return (
+    <div className={`glass p-4 mb-3 border-l-2 ${trafficLow ? 'border-[#ff4757]/60' : 'border-[#ffb800]/60'}`}>
+      <p className="text-sm text-white/80">
+        {trafficLow ? '🔴 ' : '🟡 '}
+        <span className="font-semibold">
+          {trafficLow ? 'Traffic is your bottleneck.' : 'Conversion is your focus.'}
+        </span>{' '}
+        {trafficLow
+          ? `${listings.length} products but only ~${totalSessions} visits in 30 days. Biggest lever: Amazon Ads + keyword-rich titles — not more products.`
+          : `You get visits but few sales. Improve main images, price, bullet points and reviews.`}
+        {oos > 0 ? ` ${oos} out of stock — restock those first.` : ''}
+      </p>
+    </div>
+  )
 }
 
 // Amazon listings — status, stock, price. Real data from the Merchant Listings report.
@@ -152,10 +216,12 @@ function AmazonListingsSection() {
         <div className="glass p-4"><p className="text-sm text-white/50">No listings found.</p></div>
       ) : (
         <>
+          <AmazonStoreAdvice listings={data} />
           <div className="glass p-4 mb-3 text-sm text-white/55">{data.length} listing{data.length === 1 ? '' : 's'}</div>
           <div className="space-y-2">
             {data.map(l => {
               const sb = amazonListingState(l.status)
+              const advice = amazonProductAdvice(l)
               return (
                 <a key={l.sku || l.asin} href={l.url || undefined} target="_blank" rel="noopener noreferrer" className="glass pressable p-4 block">
                   <div className="flex items-start justify-between gap-3">
@@ -168,6 +234,7 @@ function AmazonListingsSection() {
                     {typeof l.sessions === 'number' && <span>👁 {l.sessions} sessions</span>}
                     {typeof l.conversionPct === 'number' && (l.sessions ?? 0) > 0 && <span>{l.conversionPct.toFixed(1)}% conv</span>}
                   </div>
+                  {advice && <p className="text-xs text-[#ffb800] mt-1.5">→ {advice}</p>}
                 </a>
               )
             })}
