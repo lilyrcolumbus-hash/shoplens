@@ -12,7 +12,7 @@ import {
 } from './lib/etsy'
 import { enablePush, isPushEnabled, sendTestPush } from './lib/push'
 import { fetchAmazonOrders, fetchAmazonTraffic, fetchAmazonListings, type AmazonTraffic, type AmazonListing } from './lib/amazon'
-import { fetchTiktokOrders, fetchTiktokListings, connectTiktok, type TiktokListing } from './lib/tiktok'
+import { fetchTiktokOrders, fetchTiktokListings, connectTiktok, disconnectTiktok, type TiktokListing } from './lib/tiktok'
 import { fetchConnectionsStatus, saveConnection, clearConnection, type ConnectionsStatus } from './lib/connections'
 
 type Store = Order['store']
@@ -1109,6 +1109,14 @@ export default function App() {
     }
   }
 
+  async function handleDisconnectTiktok() {
+    if (confirm('Disconnect TikTok? You will need to re-authorize to fetch orders again.')) {
+      await disconnectTiktok().catch(() => {})
+      setTiktokConnected(false)
+      setTiktokOrders([])
+    }
+  }
+
   return (
     <div className="min-h-screen">
       <header
@@ -1273,11 +1281,12 @@ export default function App() {
                     <>
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-[#00d4c8]">● Connected</span>
-                        {store === 'etsy' && (
+                        {(store === 'etsy' || store === 'tiktok') && (
                           <button
                             onClick={e => {
                               e.stopPropagation()
-                              handleDisconnectEtsy()
+                              if (store === 'tiktok') handleDisconnectTiktok()
+                              else handleDisconnectEtsy()
                             }}
                             className="w-9 h-9 -mr-1 flex items-center justify-center text-white/40 hover:text-white/80 active:scale-95"
                             title="Disconnect"
@@ -1300,6 +1309,16 @@ export default function App() {
                       className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition flex items-center justify-center gap-1.5"
                     >
                       <Link2 size={16} /> Connect
+                    </button>
+                  ) : meta.conn === 'settings' ? (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        setShowSettings(true)
+                      }}
+                      className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-white/80 bg-white/[0.06] border border-white/15 active:scale-95 transition flex items-center justify-center gap-1.5"
+                    >
+                      <SettingsIcon size={16} /> Add credentials
                     </button>
                   ) : (
                     <span className="text-sm text-white/45">{CONN_LABEL[meta.conn]}</span>

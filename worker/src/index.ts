@@ -1009,6 +1009,18 @@ export default {
       return new Response(cached, { headers: { 'Content-Type': 'application/json', ...CORS } })
     }
 
+    if (url.pathname === '/tiktok/session' && request.method === 'DELETE') {
+      // Forgets this shop's authorization (so the tile shows "Connect" again) without
+      // touching the app key/secret — mirrors Etsy's local disconnect, which only clears
+      // the browser's token and keeps the app's own credentials intact for reconnecting.
+      await Promise.all([
+        'tiktok:refresh', 'tiktok:cipher', 'tiktok:shopid',
+        'tiktok:orders', 'tiktok:open', 'tiktok:seen',
+        'tiktok:listings', 'tiktok:listings:ts',
+      ].map(key => env.PUSH_KV.delete(key)))
+      return json({ ok: true })
+    }
+
     if (url.pathname === '/tiktok/listings' && request.method === 'GET') {
       const cached = await env.PUSH_KV.get('tiktok:listings')
       if (!cached) {

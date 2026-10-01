@@ -10,6 +10,12 @@ export function connectTiktok(): void {
   window.location.href = '/api/tiktok/connect'
 }
 
+// Forgets this shop's TikTok authorization (keeps the saved app key/secret in Settings).
+export async function disconnectTiktok(): Promise<void> {
+  const resp = await fetch(`${WORKER_URL}/tiktok/session`, { method: 'DELETE' })
+  if (!resp.ok) throw new Error(`Could not disconnect — HTTP ${resp.status}`)
+}
+
 export async function fetchTiktokOrders(): Promise<Order[]> {
   const resp = await fetch(`${WORKER_URL}/tiktok/orders`)
   if (!resp.ok) throw new Error(`TikTok fetch failed: ${resp.status}`)
