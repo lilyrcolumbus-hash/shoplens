@@ -16,7 +16,7 @@ import { fetchTiktokOrders, fetchTiktokListings, connectTiktok, type TiktokListi
 import { fetchConnectionsStatus, saveConnection, clearConnection, type ConnectionsStatus } from './lib/connections'
 
 type Store = Order['store']
-type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
+type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api' | 'settings'
 
 // Where each store's order manager lives — tapping a connected store opens it.
 const STORE_ORDER_URLS: Partial<Record<Store, string>> = {
@@ -27,7 +27,7 @@ const STORE_ORDER_URLS: Partial<Record<Store, string>> = {
 
 const STORE_META: Record<Store, { label: string; color: string; emoji: string; conn: ConnState }> = {
   etsy:    { label: 'Etsy',    color: 'bg-orange-500/15 text-orange-300 border-orange-500/30', emoji: '🧵', conn: 'connectable' },
-  amazon:  { label: 'Amazon',  color: 'bg-amber-500/15 text-amber-300 border-amber-500/30', emoji: '📦', conn: 'api_pending' },
+  amazon:  { label: 'Amazon',  color: 'bg-amber-500/15 text-amber-300 border-amber-500/30', emoji: '📦', conn: 'settings' },
   tiktok:  { label: 'TikTok',  color: 'bg-pink-500/15 text-pink-300 border-pink-500/30', emoji: '🎵', conn: 'connectable' },
 }
 
@@ -36,6 +36,7 @@ const CONN_LABEL: Record<ConnState, string> = {
   available: 'API available — not set up',
   api_pending: 'API approval pending',
   no_api: 'No public API',
+  settings: 'Add your credentials in Settings',
 }
 
 // Animated count-up (easeOutCubic).
@@ -1008,12 +1009,28 @@ export default function App() {
   }, [etsyConnected, loadEtsy])
 
   const loadAmazon = useCallback(async () => {
+    // "Connected" must reflect real configured credentials, not just "the
+    // endpoint responded" — it always responds 200 with an empty array when
+    // nothing is configured (or still serving a stale cache right after
+    // credentials are removed), which previously showed as "Connected" with
+    // zero real orders.
+    try {
+      const status = await fetchConnectionsStatus()
+      setAmazonConnected(status.amazon.configured)
+      if (!status.amazon.configured) {
+        setAmazonOrders([])
+        return
+      }
+    } catch {
+      setAmazonConnected(false)
+      return
+    }
     try {
       const orders = await fetchAmazonOrders()
       setAmazonOrders(orders)
-      setAmazonConnected(true)
     } catch {
-      setAmazonConnected(false)
+      // Configured but the fetch itself failed — leave amazonConnected as
+      // configured, just without fresh order data this round.
     }
   }, [])
 
