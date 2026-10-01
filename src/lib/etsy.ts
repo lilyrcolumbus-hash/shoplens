@@ -49,6 +49,12 @@ async function refreshTokens(refreshToken: string): Promise<EtsyTokens> {
     body: JSON.stringify({ refreshToken }),
   })
   if (!resp.ok) {
+    // 400/401/403 means Etsy rejected the stored refresh token itself (revoked,
+    // expired, or the app's credentials changed) — not a transient network issue.
+    if (resp.status === 400 || resp.status === 401 || resp.status === 403) {
+      clearTokens()
+      throw new Error('not_connected')
+    }
     throw new Error(`Refresh failed: ${resp.status}`)
   }
   const tokens = await resp.json() as EtsyTokens
