@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 .dev.vars
 .cloudflare-token
+CLAUDE.md
+worker/.wrangler/

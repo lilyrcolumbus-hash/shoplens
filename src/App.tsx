@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Bell, Search, Link2, Link2Off, RefreshCw, Check, ShoppingBag, ExternalLink, ChevronRight, ArrowLeft, BarChart3 } from 'lucide-react'
+import { Bell, Search, Link2, Link2Off, RefreshCw, Check, ShoppingBag, ExternalLink, ChevronRight, ArrowLeft, BarChart3, Sparkles, Send, Settings as SettingsIcon, Trash2, Save } from 'lucide-react'
+import { askAgent, buildAgentContext, type ChatMessage } from './lib/agent'
 import {
   type Order,
   type EtsyListingsData,
@@ -11,22 +12,23 @@ import {
 } from './lib/etsy'
 import { enablePush, isPushEnabled, sendTestPush } from './lib/push'
 import { fetchAmazonOrders, fetchAmazonTraffic, fetchAmazonListings, type AmazonTraffic, type AmazonListing } from './lib/amazon'
+import { fetchTiktokOrders, fetchTiktokListings, connectTiktok, type TiktokListing } from './lib/tiktok'
+import { fetchConnectionsStatus, saveConnection, clearConnection, type ConnectionsStatus } from './lib/connections'
 
 type Store = Order['store']
 type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api'
-
-const ETSY_ORDERS_URL = 'https://www.etsy.com/your/orders/sold'
 
 // Where each store's order manager lives — tapping a connected store opens it.
 const STORE_ORDER_URLS: Partial<Record<Store, string>> = {
   etsy: 'https://www.etsy.com/your/orders/sold',
   amazon: 'https://sellercentral.amazon.com/orders-v3/',
+  tiktok: 'https://seller-us.tiktok.com/order',
 }
 
 const STORE_META: Record<Store, { label: string; color: string; emoji: string; conn: ConnState }> = {
   etsy:    { label: 'Etsy',    color: 'bg-orange-500/15 text-orange-300 border-orange-500/30', emoji: '🧵', conn: 'connectable' },
   amazon:  { label: 'Amazon',  color: 'bg-amber-500/15 text-amber-300 border-amber-500/30', emoji: '📦', conn: 'api_pending' },
-  tiktok:  { label: 'TikTok',  color: 'bg-pink-500/15 text-pink-300 border-pink-500/30', emoji: '🎵', conn: 'api_pending' },
+  tiktok:  { label: 'TikTok',  color: 'bg-pink-500/15 text-pink-300 border-pink-500/30', emoji: '🎵', conn: 'connectable' },
 }
 
 const CONN_LABEL: Record<ConnState, string> = {
@@ -245,6 +247,351 @@ function AmazonListingsSection() {
   )
 }
 
+function tiktokListingState(status: string): { label: string; cls: string } {
+  const s = (status || '').toUpperCase()
+  if (s === 'ACTIVATE' || s === 'ACTIVE' || s === 'LIVE') return { label: 'Active', cls: 'text-[#00d4c8]' }
+  if (s === 'SELLER_DEACTIVATED' || s === 'PLATFORM_DEACTIVATED' || s === 'DEACTIVATED') return { label: 'Deactivated', cls: 'text-[#ff4757]' }
+  if (s === 'DRAFT') return { label: 'Draft', cls: 'text-[#ffb800]' }
+  if (s === 'PENDING' || s === 'FREEZE') return { label: status, cls: 'text-[#ffb800]' }
+  return { label: status || 'Unknown', cls: 'text-white/40' }
+}
+
+function tiktokProductAdvice(l: TiktokListing): string | null {
+  const s = (l.status || '').toUpperCase()
+  if (s === 'DRAFT') return 'Draft — publish it so customers can buy'
+  if (s.includes('DEACTIVATED') || s === 'FREEZE') return 'Not live — fix the listing to make it sellable'
+  if (l.quantity === 0) return 'Out of stock — restock'
+  return null
+}
+
+// TikTok listings — status, stock, price. Real data from the Product API.
+function TiktokListingsSection() {
+  const [data, setData] = useState<TiktokListing[] | 'pending' | null>(null)
+  const [err, setErr] = useState(false)
+  useEffect(() => {
+    fetchTiktokListings().then(setData).catch(() => setErr(true))
+  }, [])
+  return (
+    <div className="mt-8">
+      <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Listings</p>
+      {err ? (
+        <div className="glass p-4"><p className="text-sm text-white/50">Couldn't load listings.</p></div>
+      ) : data === null ? (
+        <div className="glass p-4"><div className="shimmer h-10 w-full" /></div>
+      ) : data === 'pending' ? (
+        <div className="glass p-4"><p className="text-sm text-white/55">Loading your TikTok products…</p></div>
+      ) : data.length === 0 ? (
+        <div className="glass p-4"><p className="text-sm text-white/50">No products found.</p></div>
+      ) : (
+        <>
+          <div className="glass p-4 mb-3 text-sm text-white/55">{data.length} product{data.length === 1 ? '' : 's'}</div>
+          <div className="space-y-2">
+            {data.map(l => {
+              const sb = tiktokListingState(l.status)
+              const advice = tiktokProductAdvice(l)
+              return (
+                <a key={l.id} href={l.url || undefined} target="_blank" rel="noopener noreferrer" className="glass pressable p-4 block">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-white font-medium text-sm flex-1 line-clamp-2">{l.title || l.id}</p>
+                    {l.price > 0 && <span className="text-sm font-bold metric-gold tabular-nums shrink-0">${l.price.toFixed(2)}</span>}
+                  </div>
+                  <div className="flex items-center gap-x-3 gap-y-1 mt-2 text-xs text-white/45 flex-wrap">
+                    <span className={sb.cls}>● {sb.label}</span>
+                    <span>{l.quantity === 0 ? '🔴 Out of stock' : `Stock ${l.quantity}`}</span>
+                  </div>
+                  {advice && <p className="text-xs text-[#ffb800] mt-1.5">→ {advice}</p>}
+                </a>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// AI advisor — a chat grounded in the user's REAL store data (orders/traffic/listings).
+// Backed by /api/agent (Claude). Phase-1 prototype of the "live advisor" vision.
+interface FieldSpec {
+  key: string
+  label: string
+  secret?: boolean
+  placeholder?: string
+  help?: string
+}
+
+const PROVIDER_FIELDS: Record<'etsy' | 'amazon' | 'tiktok', FieldSpec[]> = {
+  etsy: [
+    { key: 'keystring', label: 'Keystring', placeholder: 'your Etsy app keystring' },
+    { key: 'sharedSecret', label: 'Shared secret', secret: true },
+    { key: 'shopId', label: 'Shop ID', placeholder: 'numeric shop ID' },
+  ],
+  amazon: [
+    { key: 'clientId', label: 'Client ID', placeholder: 'amzn1.application-oa2-client...' },
+    { key: 'clientSecret', label: 'Client secret', secret: true },
+    { key: 'refreshToken', label: 'Refresh token', secret: true, help: 'From self-authorizing your app in Seller Central / Developer Central.' },
+    { key: 'marketplaces', label: 'Marketplace IDs', placeholder: 'ATVPDKIKX0DER,A2EUQ1WTGCTBG2', help: 'Comma-separated, no spaces.' },
+  ],
+  tiktok: [
+    { key: 'appKey', label: 'App key' },
+    { key: 'appSecret', label: 'App secret', secret: true },
+    { key: 'serviceId', label: 'Service ID' },
+  ],
+}
+
+const PROVIDER_LABEL: Record<'etsy' | 'amazon' | 'tiktok', string> = {
+  etsy: 'Etsy', amazon: 'Amazon', tiktok: 'TikTok Shop',
+}
+
+function ConnectionSection({
+  provider, configured, onSaved,
+}: {
+  provider: 'etsy' | 'amazon' | 'tiktok'
+  configured: boolean
+  onSaved: (status: ConnectionsStatus) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  async function handleSave() {
+    setSaving(true)
+    setError(null)
+    try {
+      const status = await saveConnection(provider, values)
+      onSaved(status)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleClear() {
+    setSaving(true)
+    setError(null)
+    try {
+      await clearConnection(provider)
+      setValues({})
+      onSaved(await fetchConnectionsStatus())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not clear')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="glass p-4">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between text-left">
+        <span className="font-semibold text-white">{PROVIDER_LABEL[provider]}</span>
+        <span className={`text-xs font-medium px-2 py-1 rounded-full ${configured ? 'bg-[#00d4c8]/15 text-[#00d4c8]' : 'bg-white/[0.06] text-white/40'}`}>
+          {configured ? 'Configured' : 'Not configured'}
+        </span>
+      </button>
+      {open && (
+        <div className="mt-4 space-y-3">
+          {PROVIDER_FIELDS[provider].map(f => (
+            <label key={f.key} className="block">
+              <span className="text-xs text-white/50 mb-1 block">{f.label}</span>
+              <input
+                type={f.secret ? 'password' : 'text'}
+                value={values[f.key] ?? ''}
+                onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
+                placeholder={f.placeholder ?? (f.secret && configured ? '•••••••• (unchanged if left blank)' : '')}
+                className="w-full rounded-xl bg-white/[0.06] border border-white/10 px-3 py-2.5 text-sm text-white outline-none focus:border-[#00d4c8]/50"
+              />
+              {f.help && <span className="text-[11px] text-white/35 mt-1 block">{f.help}</span>}
+            </label>
+          ))}
+          {error && <p className="text-sm text-[#ff8a94]">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#00d4c8] active:scale-95 disabled:opacity-50 transition"
+            >
+              {saved ? <Check size={16} /> : <Save size={16} />}
+              {saved ? 'Saved' : saving ? 'Saving…' : 'Save'}
+            </button>
+            {configured && (
+              <button
+                onClick={handleClear}
+                disabled={saving}
+                className="px-3 rounded-xl bg-white/[0.06] text-white/60 hover:bg-[#ff4757]/15 hover:text-[#ff8a94] active:scale-95 disabled:opacity-50 transition"
+                title="Disconnect"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SettingsPanel({ onClose }: { onClose: () => void }) {
+  const [status, setStatus] = useState<ConnectionsStatus | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchConnectionsStatus().then(setStatus).catch(e => setLoadError(e instanceof Error ? e.message : 'Could not load'))
+  }, [])
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col" style={{ background: 'rgba(8,8,8,0.92)', backdropFilter: 'blur(12px)' }}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08]" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}>
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-black bg-gradient-to-br from-[#ffb800] to-[#00d4c8]">
+            <SettingsIcon size={18} />
+          </div>
+          <div>
+            <p className="font-semibold text-white leading-tight">Settings</p>
+            <p className="text-[11px] text-white/40 leading-tight">Connect your own store accounts</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.06] text-white/70 hover:bg-white/10 active:scale-95" title="Close">
+          <ArrowLeft size={18} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 max-w-2xl mx-auto w-full">
+        <p className="text-sm text-white/55">
+          Enter your own app credentials for each store you sell on. Nothing here is shared —
+          this is only used to fetch your own orders and send push notifications for them.
+        </p>
+        {loadError && <p className="text-sm text-[#ff8a94]">{loadError}</p>}
+        {status && (
+          <>
+            <ConnectionSection provider="etsy" configured={status.etsy.configured} onSaved={setStatus} />
+            <ConnectionSection provider="amazon" configured={status.amazon.configured} onSaved={setStatus} />
+            <ConnectionSection provider="tiktok" configured={status.tiktok.configured} onSaved={setStatus} />
+          </>
+        )}
+        <p className="text-[11px] text-white/35 pt-2">
+          After saving Etsy or TikTok credentials, go back and tap Connect on that store's tile
+          to authorize your shop. Amazon needs a refresh token obtained by self-authorizing your
+          app in Amazon's Developer Central first.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function AgentChat({
+  ordersByStore, connectedByStore, amazonTraffic, onClose,
+}: {
+  ordersByStore: Partial<Record<Store, Order[]>>
+  connectedByStore: Partial<Record<Store, boolean>>
+  amazonTraffic: AmazonTraffic | 'pending' | null
+  onClose: () => void
+}) {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, loading])
+
+  const suggestions = [
+    '¿Por qué no estoy vendiendo más?',
+    '¿Qué hago hoy para vender más?',
+    '¿Cuál es mi mayor problema ahora mismo?',
+  ]
+
+  async function send(text: string) {
+    const q = text.trim()
+    if (!q || loading) return
+    setError(null)
+    const next: ChatMessage[] = [...messages, { role: 'user', content: q }]
+    setMessages(next)
+    setInput('')
+    setLoading(true)
+    try {
+      const context = buildAgentContext({ ordersByStore, connectedByStore, amazonTraffic })
+      const reply = await askAgent(next, context)
+      setMessages([...next, { role: 'assistant', content: reply }])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al contactar al asesor')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col" style={{ background: 'rgba(8,8,8,0.92)', backdropFilter: 'blur(12px)' }}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08]" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}>
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-black bg-gradient-to-br from-[#ffb800] to-[#00d4c8]">
+            <Sparkles size={18} />
+          </div>
+          <div>
+            <p className="font-semibold text-white leading-tight">Asesor ShopLens</p>
+            <p className="text-[11px] text-white/40 leading-tight">Lee tus datos reales · IA</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.06] text-white/70 hover:bg-white/10 active:scale-95" title="Cerrar">
+          <ArrowLeft size={18} />
+        </button>
+      </div>
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3 max-w-2xl mx-auto w-full">
+        {messages.length === 0 && (
+          <div className="text-center mt-6">
+            <p className="text-white/55 text-sm mb-4">Pregúntame sobre tus ventas. Leo tus órdenes y tráfico reales y te aconsejo qué hacer.</p>
+            <div className="flex flex-col gap-2">
+              {suggestions.map(s => (
+                <button key={s} onClick={() => send(s)} className="glass pressable p-3 text-sm text-white/80 text-left">{s}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap ${
+              m.role === 'user' ? 'bg-gradient-to-r from-[#ffb800] to-[#f5a623] text-black font-medium' : 'glass text-white/90'
+            }`}>{m.content}</div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="glass px-4 py-3 rounded-2xl"><div className="shimmer h-3 w-24" /></div>
+          </div>
+        )}
+        {error && <div className="glass p-3 border-l-2 border-[#ff4757]/60"><p className="text-sm text-[#ff8a94]">{error}</p></div>}
+      </div>
+
+      <div className="px-4 py-3 border-t border-white/[0.08] max-w-2xl mx-auto w-full" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}>
+        <div className="flex items-center gap-2">
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') send(input) }}
+            placeholder="Escribe tu pregunta…"
+            className="flex-1 bg-white/[0.06] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#00d4c8]/50"
+          />
+          <button
+            onClick={() => send(input)}
+            disabled={!input.trim() || loading}
+            className="w-12 h-12 shrink-0 flex items-center justify-center rounded-xl text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Enviar"
+          >
+            <Send size={18} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // In-app per-store dashboard — real orders for the tapped store, no mock data.
 function StoreDashboard({ store, orders, onBack }: { store: Store; orders: Order[]; onBack: () => void }) {
   const meta = STORE_META[store]
@@ -298,6 +645,7 @@ function StoreDashboard({ store, orders, onBack }: { store: Store; orders: Order
 
       {store === 'etsy' && <EtsyListingsSection />}
       {store === 'amazon' && <AmazonListingsSection />}
+      {store === 'tiktok' && <TiktokListingsSection />}
 
       {orderUrl && (
         <a
@@ -440,7 +788,7 @@ function PerformanceView({ orders, traffic, onBack }: { orders: Order[]; traffic
   const thisRev = wkRev(now - 7 * DAY, now + DAY), prevRev = wkRev(now - 14 * DAY, now - 7 * DAY)
   const thisCnt = wkCnt(now - 7 * DAY, now + DAY), prevCnt = wkCnt(now - 14 * DAY, now - 7 * DAY)
 
-  const stores: Store[] = ['etsy', 'amazon']
+  const stores: Store[] = ['etsy', 'amazon', 'tiktok']
   const overall = health(daysSinceLastSale(active))
 
   // 14-day revenue chart, primary currency.
@@ -592,11 +940,15 @@ export default function App() {
   const [etsyOrders, setEtsyOrders] = useState<Order[]>([])
   const [amazonConnected, setAmazonConnected] = useState(false)
   const [amazonOrders, setAmazonOrders] = useState<Order[]>([])
+  const [tiktokConnected, setTiktokConnected] = useState(false)
+  const [tiktokOrders, setTiktokOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(false)
   const [hasLoaded, setHasLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedStore, setSelectedStore] = useState<Store | null>(null)
   const [showPerf, setShowPerf] = useState(false)
+  const [showAgent, setShowAgent] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [amazonTraffic, setAmazonTraffic] = useState<AmazonTraffic | 'pending' | null>(null)
   const prevOrderIds = useRef<Set<string>>(new Set())
 
@@ -671,6 +1023,22 @@ export default function App() {
     return () => clearInterval(interval)
   }, [loadAmazon])
 
+  const loadTiktok = useCallback(async () => {
+    try {
+      const orders = await fetchTiktokOrders() // throws (409) when not yet connected
+      setTiktokOrders(orders)
+      setTiktokConnected(true)
+    } catch {
+      setTiktokConnected(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadTiktok()
+    const interval = setInterval(loadTiktok, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [loadTiktok])
+
   useEffect(() => {
     fetchAmazonTraffic().then(setAmazonTraffic).catch(() => {})
   }, [])
@@ -680,9 +1048,14 @@ export default function App() {
   }, [])
 
   // Orders awaiting fulfillment = "new orders" the user must act on.
-  const allOrders = [...etsyOrders, ...amazonOrders]
+  const allOrders = [...etsyOrders, ...amazonOrders, ...tiktokOrders]
   const newCount = allOrders.filter(o => o.status === 'unshipped').length
-  const anyConnected = etsyConnected || amazonConnected
+  const anyConnected = etsyConnected || amazonConnected || tiktokConnected
+  // Per-store breakdown of orders awaiting shipment — drives the multi-store hero CTA so an
+  // Amazon/TikTok order is never mislabeled as Etsy (the hero used to hardcode Etsy).
+  const unshippedByStore = (['etsy', 'amazon', 'tiktok'] as Store[])
+    .map(store => ({ store, count: allOrders.filter(o => o.store === store && o.status === 'unshipped').length }))
+    .filter(x => x.count > 0)
   const animatedCount = Math.round(useCountUp(newCount))
 
   // Mirror the count onto the home-screen app icon (red badge), like Mail/WhatsApp.
@@ -740,6 +1113,15 @@ export default function App() {
           <div className="flex items-center gap-2">
             {anyConnected && (
               <button
+                onClick={() => setShowAgent(true)}
+                className="w-11 h-11 flex items-center justify-center rounded-xl text-black bg-gradient-to-br from-[#ffb800] to-[#00d4c8] active:scale-95 transition"
+                title="Asesor IA"
+              >
+                <Sparkles size={20} />
+              </button>
+            )}
+            {anyConnected && (
+              <button
                 onClick={() => { setSelectedStore(null); setShowPerf(true) }}
                 className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/[0.06] text-white/70 hover:bg-white/10 active:scale-95 transition"
                 title="Performance"
@@ -764,6 +1146,13 @@ export default function App() {
             >
               <Bell size={20} />
             </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/[0.06] text-white/70 hover:bg-white/10 active:scale-95 transition"
+              title="Settings"
+            >
+              <SettingsIcon size={20} />
+            </button>
           </div>
         </div>
       </header>
@@ -780,7 +1169,7 @@ export default function App() {
         ) : selectedStore ? (
           <StoreDashboard
             store={selectedStore}
-            orders={selectedStore === 'etsy' ? etsyOrders : amazonOrders}
+            orders={selectedStore === 'etsy' ? etsyOrders : selectedStore === 'amazon' ? amazonOrders : tiktokOrders}
             onBack={() => setSelectedStore(null)}
           />
         ) : (
@@ -813,15 +1202,21 @@ export default function App() {
             <p className="text-white text-xl font-semibold mb-1">
               {newCount === 1 ? 'New order to ship' : 'New orders to ship'}
             </p>
-            <p className="text-white/45 mb-6">Tap below to view the details on Etsy.</p>
-            <a
-              href={ETSY_ORDERS_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center gap-2"
-            >
-              View orders on Etsy <ExternalLink size={16} />
-            </a>
+            <p className="text-white/45 mb-6">
+              {unshippedByStore.length > 1 ? 'Across your stores — tap one to see its orders.' : 'Tap to see the orders.'}
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {unshippedByStore.map(({ store, count }) => (
+                <button
+                  key={store}
+                  onClick={() => setSelectedStore(store)}
+                  className="px-4 py-2.5 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center gap-2"
+                >
+                  <span>{STORE_META[store].emoji}</span>
+                  {STORE_META[store].label} · {count} <ChevronRight size={16} />
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="glass glass-glow p-10 text-center animate-slide-up mb-8">
@@ -829,15 +1224,7 @@ export default function App() {
               <Check className="text-[#00d4c8]" size={32} strokeWidth={3} />
             </div>
             <p className="text-white text-xl font-semibold mb-1">All caught up</p>
-            <p className="text-white/45 mb-6">No new orders to ship right now.</p>
-            <a
-              href={ETSY_ORDERS_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-white/60 hover:text-white inline-flex items-center gap-1.5"
-            >
-              View all orders on Etsy <ExternalLink size={14} />
-            </a>
+            <p className="text-white/45">No new orders to ship right now.</p>
           </div>
         )}
 
@@ -848,7 +1235,7 @@ export default function App() {
             {(Object.keys(STORE_META) as Store[]).map((store, i) => {
               const meta = STORE_META[store]
               const connected =
-                (store === 'etsy' && etsyConnected) || (store === 'amazon' && amazonConnected)
+                (store === 'etsy' && etsyConnected) || (store === 'amazon' && amazonConnected) || (store === 'tiktok' && tiktokConnected)
               const openStore = () => {
                 if (connected) setSelectedStore(store)
               }
@@ -890,7 +1277,8 @@ export default function App() {
                     <button
                       onClick={e => {
                         e.stopPropagation()
-                        connectEtsy()
+                        if (store === 'tiktok') connectTiktok()
+                        else connectEtsy()
                       }}
                       className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition flex items-center justify-center gap-1.5"
                     >
@@ -907,6 +1295,16 @@ export default function App() {
         </>
         )}
       </main>
+
+      {showAgent && (
+        <AgentChat
+          ordersByStore={{ etsy: etsyOrders, amazon: amazonOrders, tiktok: tiktokOrders }}
+          connectedByStore={{ etsy: etsyConnected, amazon: amazonConnected, tiktok: tiktokConnected }}
+          amazonTraffic={amazonTraffic}
+          onClose={() => setShowAgent(false)}
+        />
+      )}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </div>
   )
 }
