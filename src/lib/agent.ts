@@ -1,6 +1,7 @@
 // ShopLens AI advisor client. Builds a compact snapshot of the user's REAL data and sends it
 // (with the chat history) to the /api/agent Pages Function, which calls Claude server-side.
 import type { Order } from './etsy'
+import { ownerHeaders } from './worker'
 import type { AmazonTraffic, AmazonListing } from './amazon'
 
 export interface ChatMessage {
@@ -89,7 +90,7 @@ export function buildAgentContext(params: {
 export async function askAgent(messages: ChatMessage[], context: AgentContext): Promise<string> {
   const resp = await fetch('/api/agent', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...ownerHeaders() },
     body: JSON.stringify({ messages, context }),
   })
   const data = (await resp.json()) as { text?: string; error?: string }

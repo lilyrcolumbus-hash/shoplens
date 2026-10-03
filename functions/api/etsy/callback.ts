@@ -45,7 +45,7 @@ export const onRequestGet: PagesFunction = async () => {
     try {
       var r = await fetch('/api/etsy/token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-shoplens-key': localStorage.getItem('shoplens_owner_key') || '' },
         body: JSON.stringify({ code: code, code_verifier: saved.verifier })
       });
       if (!r.ok) { var t = await r.text(); fail('Token exchange failed (HTTP ' + r.status + '):\\n' + t); return; }

@@ -1,9 +1,9 @@
 // Web Push subscription client — talks to the shoplens-push Cloudflare Worker.
 import { loadTokens } from './etsy'
+import { WORKER_URL, workerFetch } from './worker'
 
 const VAPID_PUBLIC =
   'BMC9aGp-ivfjw0beZu1QxE5vTeQn0Qe4y8ennTAtVJKny2CcVYrnNlPapITdApgCcZ4d0BB7IqusTAA7FFz7Uyw'
-const WORKER_URL = 'https://shoplens-push.lilyrcolumbus.workers.dev'
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -45,7 +45,7 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
   }
 
   const tokens = loadTokens()
-  const resp = await fetch(`${WORKER_URL}/subscribe`, {
+  const resp = await workerFetch(`${WORKER_URL}/subscribe`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -58,6 +58,6 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
 }
 
 export async function sendTestPush(): Promise<boolean> {
-  const resp = await fetch(`${WORKER_URL}/test`, { method: 'POST' })
+  const resp = await workerFetch(`${WORKER_URL}/test`, { method: 'POST' })
   return resp.ok
 }

@@ -21,7 +21,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
 
   const resp = await fetch(`${workerUrl}/etsy/token-exchange`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-shoplens-key': request.headers.get('x-shoplens-key') ?? '',
+    },
     body: JSON.stringify({ code: body.code, codeVerifier: body.code_verifier, redirectUri }),
   })
 

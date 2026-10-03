@@ -1,7 +1,7 @@
 // Etsy client — handles token storage, refresh, and order fetching.
+import { WORKER_URL, workerFetch } from './worker'
 
 const STORAGE_KEY = 'shoplens_etsy_tokens'
-const WORKER_URL = 'https://shoplens-push.lilyrcolumbus.workers.dev'
 
 export interface EtsyTokens {
   accessToken: string
@@ -123,7 +123,7 @@ export interface EtsyListingsData {
 }
 
 export async function fetchEtsyListings(): Promise<EtsyListingsData> {
-  const resp = await fetch(`${WORKER_URL}/etsy/listings`)
+  const resp = await workerFetch(`${WORKER_URL}/etsy/listings`)
   if (!resp.ok) throw new Error(`Etsy listings failed: ${resp.status}`)
   return (await resp.json()) as EtsyListingsData
 }

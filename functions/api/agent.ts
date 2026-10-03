@@ -6,6 +6,7 @@
 
 interface Env {
   ANTHROPIC_API_KEY: string
+  OWNER_KEY?: string
 }
 
 interface ChatMessage {
@@ -51,7 +52,7 @@ function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, x-shoplens-key',
   }
 }
 
@@ -60,6 +61,10 @@ export const onRequestOptions: PagesFunction = async () => {
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ env, request }) => {
+  // This endpoint spends the owner's Anthropic credits, so it requires the owner key.
+  if (!env.OWNER_KEY || request.headers.get('x-shoplens-key') !== env.OWNER_KEY) {
+    return Response.json({ error: 'unauthorized' }, { status: 401, headers: corsHeaders() })
+  }
   if (!env.ANTHROPIC_API_KEY) {
     return Response.json(
       { error: 'El asesor de IA no está configurado todavía: falta la variable ANTHROPIC_API_KEY.' },

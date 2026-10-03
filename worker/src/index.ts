@@ -13,6 +13,7 @@ import { buildPushPayload } from '@block65/webcrypto-web-push'
 // configured the old way) keeps working until it's migrated.
 interface Env {
   PUSH_KV: KVNamespace
+  OWNER_KEY?: string
   VAPID_PUBLIC: string
   VAPID_PRIVATE: string
   VAPID_SUBJECT: string
@@ -96,7 +97,7 @@ interface PushSub {
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, x-shoplens-key',
 }
 
 function json(data: unknown, status = 200): Response {
@@ -772,10 +773,38 @@ async function refreshTiktokListings(env: Env): Promise<void> {
   await env.PUSH_KV.put('tiktok:listings:ts', String(Date.now()))
 }
 
+// Routes that must stay reachable without the owner key: the OAuth entry points a store's
+// own consent screen redirects through. They only hand out public authorize URLs or exchange a
+// single-use code issued to this app, so they expose none of the owner's data.
+const PUBLIC_PATHS = new Set(['/etsy/authorize-url', '/tiktok/authorize-url', '/tiktok/exchange'])
+
+// Constant-time string comparison so response timing can't leak the owner key.
+function safeEqual(a: string, b: string): boolean {
+  const encoder = new TextEncoder()
+  const left = encoder.encode(a)
+  const right = encoder.encode(b)
+  let diff = left.length ^ right.length
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    diff |= (left[i] ?? 0) ^ (right[i] ?? 0)
+  }
+  return diff === 0
+}
+
+function checkOwnerKey(request: Request, env: Env): Response | null {
+  if (!env.OWNER_KEY) return json({ error: 'OWNER_KEY is not configured on this worker' }, 503)
+  const provided = request.headers.get('x-shoplens-key') ?? ''
+  return safeEqual(provided, env.OWNER_KEY) ? null : json({ error: 'unauthorized' }, 401)
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS })
     const url = new URL(request.url)
+
+    if (!PUBLIC_PATHS.has(url.pathname)) {
+      const denied = checkOwnerKey(request, env)
+      if (denied) return denied
+    }
 
     // ── Connections config: lets anyone running their own copy of ShopLens plug in
     // their own Etsy/Amazon/TikTok app credentials from Settings, instead of a

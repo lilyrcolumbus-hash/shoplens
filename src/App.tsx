@@ -14,6 +14,7 @@ import { enablePush, isPushEnabled, sendTestPush } from './lib/push'
 import { fetchAmazonOrders, fetchAmazonTraffic, fetchAmazonListings, type AmazonTraffic, type AmazonListing } from './lib/amazon'
 import { fetchTiktokOrders, fetchTiktokListings, connectTiktok, disconnectTiktok, type TiktokListing } from './lib/tiktok'
 import { fetchConnectionsStatus, saveConnection, clearConnection, type ConnectionsStatus } from './lib/connections'
+import { getOwnerKey, setOwnerKey } from './lib/worker'
 
 type Store = Order['store']
 type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api' | 'settings'
@@ -436,12 +437,52 @@ function ConnectionSection({
   )
 }
 
+function OwnerKeySection({ onSaved }: { onSaved: () => void }) {
+  const [value, setValue] = useState(getOwnerKey())
+  const [saved, setSaved] = useState(false)
+
+  return (
+    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4 space-y-2">
+      <p className="text-sm font-semibold text-white">Owner key</p>
+      <p className="text-xs text-white/50">
+        Protects your connections and orders. Enter the key you set when deploying your worker.
+        It is stored only in this browser.
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="password"
+          value={value}
+          onChange={e => { setValue(e.target.value); setSaved(false) }}
+          autoComplete="off"
+          aria-label="Owner key"
+          placeholder="Owner key"
+          className="flex-1 min-w-0 rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-[#ffb800]"
+        />
+        <button
+          onClick={() => { setOwnerKey(value.trim()); setSaved(true); onSaved() }}
+          className="px-4 rounded-xl bg-gradient-to-br from-[#ffb800] to-[#f5a623] text-black text-sm font-semibold active:scale-95"
+        >
+          {saved ? 'Saved' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<ConnectionsStatus | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
+  const loadStatus = () => {
+    fetchConnectionsStatus()
+      .then(next => { setLoadError(null); setStatus(next) })
+      .catch(e => setLoadError(e instanceof Error ? e.message : 'Could not load'))
+  }
+
   useEffect(() => {
-    fetchConnectionsStatus().then(setStatus).catch(e => setLoadError(e instanceof Error ? e.message : 'Could not load'))
+    fetchConnectionsStatus()
+      .then(setStatus)
+      .catch(e => setLoadError(e instanceof Error ? e.message : 'Could not load'))
   }, [])
 
   return (
@@ -466,6 +507,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
           Enter your own app credentials for each store you sell on. Nothing here is shared —
           this is only used to fetch your own orders and send push notifications for them.
         </p>
+        <OwnerKeySection onSaved={loadStatus} />
         {loadError && <p className="text-sm text-[#ff8a94]">{loadError}</p>}
         {status && (
           <>
