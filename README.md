@@ -8,6 +8,14 @@ A unified multi-store dashboard for e-commerce sellers: real orders from Etsy an
 
 Sellers running multiple storefronts have to check each platform separately to know if they have new orders to ship. ShopLens polls every connected store on a schedule, aggregates real orders into one dashboard, and pushes a native notification to the seller's phone the moment something new comes in — installable as a PWA, so it behaves like a native app on iOS/Android.
 
+## Screenshots
+
+| First run | Connected to a server | Settings |
+|---|---|---|
+| ![Welcome screen shown until a server is configured](docs/screenshots/welcome.png) | ![Dashboard connected to a server, ready to connect stores](docs/screenshots/connected-no-stores.png) | ![Server and store credential settings](docs/screenshots/settings.png) |
+
+These show the app without any store connected: ShopLens never displays sample or mock orders, so the order, per-store and performance views only appear once you connect your own stores (see "Verify it yourself").
+
 ## Integrations
 
 | Store | Status |
