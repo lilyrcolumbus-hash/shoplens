@@ -2,7 +2,10 @@
 import { loadTokens } from './etsy'
 import { WORKER_URL, workerFetch } from './worker'
 
-const VAPID_PUBLIC =
+// Public half of the VAPID key pair (safe to ship). Each deployment sets its own via
+// VITE_VAPID_PUBLIC; the private half lives only in that deployment's worker secrets.
+const VAPID_PUBLIC: string =
+  import.meta.env.VITE_VAPID_PUBLIC ??
   'BMC9aGp-ivfjw0beZu1QxE5vTeQn0Qe4y8ennTAtVJKny2CcVYrnNlPapITdApgCcZ4d0BB7IqusTAA7FFz7Uyw'
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
