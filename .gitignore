@@ -26,3 +26,6 @@ dist-ssr
 .cloudflare-token
 CLAUDE.md
 worker/.wrangler/
+
+# Claude Code local settings
+.claude/
