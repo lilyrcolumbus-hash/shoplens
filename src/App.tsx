@@ -14,7 +14,7 @@ import { enablePush, isPushEnabled, sendTestPush } from './lib/push'
 import { fetchAmazonOrders, fetchAmazonTraffic, fetchAmazonListings, type AmazonTraffic, type AmazonListing } from './lib/amazon'
 import { fetchTiktokOrders, fetchTiktokListings, connectTiktok, disconnectTiktok, type TiktokListing } from './lib/tiktok'
 import { fetchConnectionsStatus, saveConnection, clearConnection, type ConnectionsStatus } from './lib/connections'
-import { getOwnerKey, setOwnerKey } from './lib/worker'
+import { getOwnerKey, setOwnerKey, workerUrl, setWorkerUrl, hasServer } from './lib/worker'
 
 type Store = Order['store']
 type ConnState = 'connectable' | 'available' | 'api_pending' | 'no_api' | 'settings'
@@ -437,34 +437,58 @@ function ConnectionSection({
   )
 }
 
-function OwnerKeySection({ onSaved }: { onSaved: () => void }) {
-  const [value, setValue] = useState(getOwnerKey())
-  const [saved, setSaved] = useState(false)
+function ServerSection() {
+  const [url, setUrl] = useState(workerUrl())
+  const [key, setKey] = useState(getOwnerKey())
+  const [error, setError] = useState<string | null>(null)
+
+  function save() {
+    const cleanUrl = url.trim()
+    if (cleanUrl && !/^https:\/\/[^\s/]+/.test(cleanUrl)) {
+      setError('The server URL must start with https://')
+      return
+    }
+    setWorkerUrl(cleanUrl)
+    setOwnerKey(key.trim())
+    // Reload so every screen starts again against the new server.
+    window.location.reload()
+  }
+
+  const inputClass =
+    'w-full min-w-0 rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-[#ffb800]'
 
   return (
     <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4 space-y-2">
-      <p className="text-sm font-semibold text-white">Owner key</p>
+      <p className="text-sm font-semibold text-white">Your server</p>
       <p className="text-xs text-white/50">
-        Protects your connections and orders. Enter the key you set when deploying your worker.
-        It is stored only in this browser.
+        ShopLens runs against your own worker, so your store data stays yours. Enter the worker URL
+        and the owner key you chose when you deployed it. Both are stored only in this browser.
       </p>
-      <div className="flex gap-2">
-        <input
-          type="password"
-          value={value}
-          onChange={e => { setValue(e.target.value); setSaved(false) }}
-          autoComplete="off"
-          aria-label="Owner key"
-          placeholder="Owner key"
-          className="flex-1 min-w-0 rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-[#ffb800]"
-        />
-        <button
-          onClick={() => { setOwnerKey(value.trim()); setSaved(true); onSaved() }}
-          className="px-4 rounded-xl bg-gradient-to-br from-[#ffb800] to-[#f5a623] text-black text-sm font-semibold active:scale-95"
-        >
-          {saved ? 'Saved' : 'Save'}
-        </button>
-      </div>
+      <input
+        type="url"
+        value={url}
+        onChange={e => { setUrl(e.target.value); setError(null) }}
+        autoComplete="off"
+        aria-label="Server URL"
+        placeholder="https://shoplens-push.your-name.workers.dev"
+        className={inputClass}
+      />
+      <input
+        type="password"
+        value={key}
+        onChange={e => setKey(e.target.value)}
+        autoComplete="off"
+        aria-label="Owner key"
+        placeholder="Owner key"
+        className={inputClass}
+      />
+      {error && <p className="text-xs text-[#ff8a94]">{error}</p>}
+      <button
+        onClick={save}
+        className="w-full py-2 rounded-xl bg-gradient-to-br from-[#ffb800] to-[#f5a623] text-black text-sm font-semibold active:scale-95"
+      >
+        Save and reload
+      </button>
     </div>
   )
 }
@@ -473,16 +497,15 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<ConnectionsStatus | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const loadStatus = () => {
-    fetchConnectionsStatus()
-      .then(next => { setLoadError(null); setStatus(next) })
-      .catch(e => setLoadError(e instanceof Error ? e.message : 'Could not load'))
-  }
-
   useEffect(() => {
+    if (!hasServer()) return
     fetchConnectionsStatus()
       .then(setStatus)
-      .catch(e => setLoadError(e instanceof Error ? e.message : 'Could not load'))
+      .catch(e =>
+        setLoadError(
+          e instanceof Error && e.message === 'no_server' ? 'No server configured yet.' : e instanceof Error ? e.message : 'Could not load',
+        ),
+      )
   }, [])
 
   return (
@@ -507,7 +530,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
           Enter your own app credentials for each store you sell on. Nothing here is shared —
           this is only used to fetch your own orders and send push notifications for them.
         </p>
-        <OwnerKeySection onSaved={loadStatus} />
+        <ServerSection />
         {loadError && <p className="text-sm text-[#ff8a94]">{loadError}</p>}
         {status && (
           <>
@@ -1242,7 +1265,27 @@ export default function App() {
         ) : (
         <>
         {/* HERO: new-orders indicator (no order details — those live in each store) */}
-        {!anyConnected ? (
+        {!hasServer() ? (
+          <div className="glass glass-glow p-8 text-center animate-slide-up mb-8">
+            <ShoppingBag className="mx-auto text-white/20 mb-4" size={48} />
+            <p className="text-white font-semibold text-lg mb-1">Welcome to ShopLens</p>
+            <p className="text-white/55 mb-4 text-sm">
+              One dashboard for your Etsy, Amazon and TikTok Shop orders, with push notifications for new ones.
+              ShopLens is a single-owner app: it runs against your own server, so your store data stays yours.
+            </p>
+            <ol className="text-left text-sm text-white/60 space-y-1 mb-6 max-w-sm mx-auto list-decimal list-inside">
+              <li>Deploy your own worker (the README walks through it).</li>
+              <li>Open Settings and enter your server URL and owner key.</li>
+              <li>Add your store credentials and connect your shops.</li>
+            </ol>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center gap-2"
+            >
+              <SettingsIcon size={16} /> Open Settings
+            </button>
+          </div>
+        ) : !anyConnected ? (
           <div className="glass glass-glow p-10 text-center animate-slide-up mb-8">
             <ShoppingBag className="mx-auto text-white/20 mb-4" size={48} />
             <p className="text-white font-semibold text-lg mb-1">Connect your shop</p>
@@ -1296,80 +1339,82 @@ export default function App() {
         )}
 
         {/* Store connections */}
-        <section>
-          <h2 className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Stores</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {(Object.keys(STORE_META) as Store[]).map((store, i) => {
-              const meta = STORE_META[store]
-              const connected =
-                (store === 'etsy' && etsyConnected) || (store === 'amazon' && amazonConnected) || (store === 'tiktok' && tiktokConnected)
-              const openStore = () => {
-                if (connected) setSelectedStore(store)
-              }
-              return (
-                <div
-                  key={store}
-                  onClick={openStore}
-                  className={`glass glass-glow pressable animate-slide-up p-4 ${
-                    connected ? 'ring-1 ring-[#00d4c8]/40 cursor-pointer' : ''
-                  }`}
-                  style={{ animationDelay: `${i * 70}ms` }}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xl">{meta.emoji}</span>
-                    <span className="font-semibold text-white">{meta.label}</span>
+        {hasServer() && (
+          <section>
+            <h2 className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Stores</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {(Object.keys(STORE_META) as Store[]).map((store, i) => {
+                const meta = STORE_META[store]
+                const connected =
+                  (store === 'etsy' && etsyConnected) || (store === 'amazon' && amazonConnected) || (store === 'tiktok' && tiktokConnected)
+                const openStore = () => {
+                  if (connected) setSelectedStore(store)
+                }
+                return (
+                  <div
+                    key={store}
+                    onClick={openStore}
+                    className={`glass glass-glow pressable animate-slide-up p-4 ${
+                      connected ? 'ring-1 ring-[#00d4c8]/40 cursor-pointer' : ''
+                    }`}
+                    style={{ animationDelay: `${i * 70}ms` }}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xl">{meta.emoji}</span>
+                      <span className="font-semibold text-white">{meta.label}</span>
+                    </div>
+                    {connected ? (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-[#00d4c8]">● Connected</span>
+                          {(store === 'etsy' || store === 'tiktok') && (
+                            <button
+                              onClick={e => {
+                                e.stopPropagation()
+                                if (store === 'tiktok') handleDisconnectTiktok()
+                                else handleDisconnectEtsy()
+                              }}
+                              className="w-9 h-9 -mr-1 flex items-center justify-center text-white/40 hover:text-white/80 active:scale-95"
+                              title="Disconnect"
+                            >
+                              <Link2Off size={16} />
+                            </button>
+                          )}
+                        </div>
+                        <span className="mt-1 inline-flex items-center gap-1 text-xs text-white/40">
+                          Open dashboard <ChevronRight size={12} />
+                        </span>
+                      </>
+                    ) : meta.conn === 'connectable' ? (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation()
+                          if (store === 'tiktok') connectTiktok()
+                          else connectEtsy()
+                        }}
+                        className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition flex items-center justify-center gap-1.5"
+                      >
+                        <Link2 size={16} /> Connect
+                      </button>
+                    ) : meta.conn === 'settings' ? (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation()
+                          setShowSettings(true)
+                        }}
+                        className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-white/80 bg-white/[0.06] border border-white/15 active:scale-95 transition flex items-center justify-center gap-1.5"
+                      >
+                        <SettingsIcon size={16} /> Add credentials
+                      </button>
+                    ) : (
+                      <span className="text-sm text-white/45">{CONN_LABEL[meta.conn]}</span>
+                    )}
                   </div>
-                  {connected ? (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-[#00d4c8]">● Connected</span>
-                        {(store === 'etsy' || store === 'tiktok') && (
-                          <button
-                            onClick={e => {
-                              e.stopPropagation()
-                              if (store === 'tiktok') handleDisconnectTiktok()
-                              else handleDisconnectEtsy()
-                            }}
-                            className="w-9 h-9 -mr-1 flex items-center justify-center text-white/40 hover:text-white/80 active:scale-95"
-                            title="Disconnect"
-                          >
-                            <Link2Off size={16} />
-                          </button>
-                        )}
-                      </div>
-                      <span className="mt-1 inline-flex items-center gap-1 text-xs text-white/40">
-                        Open dashboard <ChevronRight size={12} />
-                      </span>
-                    </>
-                  ) : meta.conn === 'connectable' ? (
-                    <button
-                      onClick={e => {
-                        e.stopPropagation()
-                        if (store === 'tiktok') connectTiktok()
-                        else connectEtsy()
-                      }}
-                      className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition flex items-center justify-center gap-1.5"
-                    >
-                      <Link2 size={16} /> Connect
-                    </button>
-                  ) : meta.conn === 'settings' ? (
-                    <button
-                      onClick={e => {
-                        e.stopPropagation()
-                        setShowSettings(true)
-                      }}
-                      className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-white/80 bg-white/[0.06] border border-white/15 active:scale-95 transition flex items-center justify-center gap-1.5"
-                    >
-                      <SettingsIcon size={16} /> Add credentials
-                    </button>
-                  ) : (
-                    <span className="text-sm text-white/45">{CONN_LABEL[meta.conn]}</span>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </section>
+                )
+              })}
+            </div>
+          </section>
+        )}
         </>
         )}
       </main>

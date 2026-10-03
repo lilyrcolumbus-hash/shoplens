@@ -38,11 +38,11 @@ ShopLens is a **single-owner** app: there are no user accounts. Each deployment 
 
 - Every worker route (orders, listings, connection settings, push subscriptions, manual poll) requires an `x-shoplens-key` header that matches the worker's `OWNER_KEY` secret. The check is constant-time, and the worker refuses to serve anything if the secret isn't configured.
 - The AI advisor proxy (`/api/agent`) checks the same key, so nobody else can spend the owner's Anthropic credits.
-- The owner types the key once in **Settings → Owner key**; it is kept only in that browser's `localStorage` and never bundled into the app.
+- The owner enters the server URL and the key once in **Settings → Your server**; both are kept only in that browser's `localStorage` and never bundled into the app.
 - Store credentials (Etsy, Amazon, TikTok) are entered in Settings and stored server-side in Cloudflare KV, never in the client bundle.
 - Only the OAuth entry points (`/etsy/authorize-url`, `/tiktok/authorize-url`, `/tiktok/exchange`) are reachable without the key: they hand out public authorize URLs or exchange a single-use code issued to this app.
 
-Because of this design, the public demo shows the interface but not anyone's data. To see it working with real orders, deploy your own copy (below).
+Because the app is not tied to any one server, the public demo opens on a welcome screen: anyone can point it at **their own worker** from Settings, connect their own stores and use every feature, without depending on the maintainer's server or key. The maintainer's data is never exposed.
 
 ## Verify it yourself (deploy your own copy)
 
@@ -57,7 +57,7 @@ You need a free Cloudflare account and your own store API credentials (an Etsy d
    ```bash
    cd worker && npx wrangler kv namespace create PUSH_KV
    ```
-3. **Generate push keys and an owner key**, then store them as worker secrets:
+3. **Generate push keys and choose an owner key**, then store them as worker secrets:
    ```bash
    npx web-push generate-vapid-keys        # prints a public and a private key
    npx wrangler secret put VAPID_PUBLIC
@@ -66,11 +66,12 @@ You need a free Cloudflare account and your own store API credentials (an Etsy d
    npx wrangler secret put OWNER_KEY       # any long random string you choose
    ```
 4. **Deploy the worker** and note its URL: `npx wrangler deploy`
-5. **Deploy the app** to Cloudflare Pages (connect the repo, build command `npm run build`, output `dist`) with these settings:
-   - Build variables: `VITE_WORKER_URL` = your worker URL, `VITE_VAPID_PUBLIC` = the public key from step 3.
-   - Secrets/variables for the Pages functions: `OWNER_KEY` (same value as the worker), `SHOPLENS_WORKER_URL` = your worker URL, and optionally `ANTHROPIC_API_KEY` for the AI advisor.
-6. **Register your Etsy app's redirect URI** as `https://<your-pages-domain>/api/etsy/callback`.
-7. **Use it:** open your Pages URL → **Settings** → enter your **Owner key** → enter your Etsy / Amazon / TikTok credentials → **Connect**.
+5. **Get the app.** You can use the hosted app at the demo URL (it works with any worker: you point it at yours in step 7), or deploy your own copy to Cloudflare Pages (connect the repo, build command `npm run build`, output `dist`). Optional settings for your own Pages project:
+   - `OWNER_KEY` (same value as the worker) and `ANTHROPIC_API_KEY`: required only for the AI advisor, which runs as a Pages Function.
+   - `SHOPLENS_WORKER_URL`: only for the TikTok connection flow.
+   - Build variable `VITE_WORKER_URL`: pre-fills your worker URL so you don't have to type it in Settings.
+6. **Register your Etsy app's redirect URI** as `https://<the-app-domain>/api/etsy/callback` (the domain where you open the app).
+7. **Use it:** open the app → **Settings → Your server** → enter your worker URL and owner key → **Save and reload** → enter your Etsy / Amazon / TikTok credentials → tap **Connect** on each store.
 
 What you should see: each connected store appears as a tile; tapping it opens that store's real orders (product, buyer, amount, status, date); the performance view shows revenue and order volume per currency; the worker polls every 10 minutes and sends a push notification when a new order arrives.
 
@@ -81,4 +82,4 @@ npm install
 npm run dev
 ```
 
-Visit `http://localhost:5173`. Point the app at your own worker with a `.env.local` containing `VITE_WORKER_URL` (and `VITE_VAPID_PUBLIC` for push), then enter your owner key and store credentials in Settings. An `ANTHROPIC_API_KEY` (set as a Cloudflare Pages secret) is only needed for the AI advisor.
+Visit `http://localhost:5173`, open Settings, and enter your worker URL and owner key (or put `VITE_WORKER_URL` in a `.env.local` to pre-fill it), then enter your store credentials. An `ANTHROPIC_API_KEY` (set as a Cloudflare Pages secret) is only needed for the AI advisor.

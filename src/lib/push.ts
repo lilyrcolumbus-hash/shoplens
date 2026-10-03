@@ -1,12 +1,6 @@
 // Web Push subscription client — talks to the shoplens-push Cloudflare Worker.
 import { loadTokens } from './etsy'
-import { WORKER_URL, workerFetch } from './worker'
-
-// Public half of the VAPID key pair (safe to ship). Each deployment sets its own via
-// VITE_VAPID_PUBLIC; the private half lives only in that deployment's worker secrets.
-const VAPID_PUBLIC: string =
-  import.meta.env.VITE_VAPID_PUBLIC ??
-  'BMC9aGp-ivfjw0beZu1QxE5vTeQn0Qe4y8ennTAtVJKny2CcVYrnNlPapITdApgCcZ4d0BB7IqusTAA7FFz7Uyw'
+import { workerUrl, workerFetch } from './worker'
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -29,6 +23,13 @@ export async function isPushEnabled(): Promise<boolean> {
   return !!sub && Notification.permission === 'granted'
 }
 
+async function fetchVapidPublic(): Promise<string> {
+  // The public VAPID key belongs to the worker's key pair, so ask the worker for it.
+  const resp = await workerFetch(`${workerUrl()}/vapid-public`)
+  if (!resp.ok) throw new Error(`Could not load the push key (HTTP ${resp.status})`)
+  return ((await resp.json()) as { key: string }).key
+}
+
 export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
   if (!pushSupported()) {
     return { ok: false, error: 'Push not supported here. On iPhone, open the app from your home screen.' }
@@ -43,12 +44,12 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
   if (!sub) {
     sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC) as BufferSource,
+      applicationServerKey: urlBase64ToUint8Array(await fetchVapidPublic()) as BufferSource,
     })
   }
 
   const tokens = loadTokens()
-  const resp = await workerFetch(`${WORKER_URL}/subscribe`, {
+  const resp = await workerFetch(`${workerUrl()}/subscribe`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -61,6 +62,6 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
 }
 
 export async function sendTestPush(): Promise<boolean> {
-  const resp = await workerFetch(`${WORKER_URL}/test`, { method: 'POST' })
+  const resp = await workerFetch(`${workerUrl()}/test`, { method: 'POST' })
   return resp.ok
 }

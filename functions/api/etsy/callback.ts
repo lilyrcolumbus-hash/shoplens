@@ -1,6 +1,7 @@
 // GET /api/etsy/callback?code=X&state=Y  (Etsy redirects here)
 // Serves an HTML page whose JS reads the PKCE verifier from localStorage,
-// posts code+verifier to /api/etsy/token, stores tokens, and redirects to /.
+// posts code+verifier straight to the owner's worker (/etsy/token-exchange), stores tokens,
+// and redirects to /.
 // No cookies — avoids iOS Safari ITP issues.
 
 export const onRequestGet: PagesFunction = async () => {
@@ -43,10 +44,12 @@ export const onRequestGet: PagesFunction = async () => {
     if (!saved || !saved.verifier) { fail('Your session expired (the security code was lost). Go back and tap Connect again — make sure you stay in the same browser.'); return; }
     if (state !== saved.state) { fail('Security check failed (state mismatch). Tap Connect again.'); return; }
     try {
-      var r = await fetch('/api/etsy/token', {
+      var base = (localStorage.getItem('shoplens_worker_url') || '').replace(/\\/+$/, '');
+      if (!base) { fail('No server is configured in this browser. Open Settings, enter your server URL and owner key, then tap Connect again.'); return; }
+      var r = await fetch(base + '/etsy/token-exchange', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-shoplens-key': localStorage.getItem('shoplens_owner_key') || '' },
-        body: JSON.stringify({ code: code, code_verifier: saved.verifier })
+        body: JSON.stringify({ code: code, codeVerifier: saved.verifier, redirectUri: location.origin + '/api/etsy/callback' })
       });
       if (!r.ok) { var t = await r.text(); fail('Token exchange failed (HTTP ' + r.status + '):\\n' + t); return; }
       var tokens = await r.json();

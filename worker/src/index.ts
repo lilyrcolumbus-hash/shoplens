@@ -97,7 +97,7 @@ interface PushSub {
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-shoplens-key',
+  'Access-Control-Allow-Headers': 'Content-Type, x-shoplens-key, Authorization',
 }
 
 function json(data: unknown, status = 200): Response {
@@ -773,10 +773,28 @@ async function refreshTiktokListings(env: Env): Promise<void> {
   await env.PUSH_KV.put('tiktok:listings:ts', String(Date.now()))
 }
 
+interface EtsyReceipt {
+  receipt_id: number
+  status: string
+  name: string
+  is_shipped: boolean
+  created_timestamp: number
+  grandtotal: { amount: number; divisor: number; currency_code: string }
+  transactions: Array<{ title: string }>
+}
+
+function etsyOrderStatus(r: EtsyReceipt): 'unshipped' | 'shipped' | 'completed' | 'canceled' {
+  const s = (r.status || '').toLowerCase()
+  if (s === 'canceled' || s.includes('refund')) return 'canceled'
+  if (s === 'completed') return 'completed'
+  if (r.is_shipped) return 'shipped'
+  return 'unshipped'
+}
+
 // Routes that must stay reachable without the owner key: the OAuth entry points a store's
-// own consent screen redirects through. They only hand out public authorize URLs or exchange a
+// own consent screen redirects through, plus the public half of the push key pair. They only hand out public authorize URLs or exchange a
 // single-use code issued to this app, so they expose none of the owner's data.
-const PUBLIC_PATHS = new Set(['/etsy/authorize-url', '/tiktok/authorize-url', '/tiktok/exchange'])
+const PUBLIC_PATHS = new Set(['/etsy/authorize-url', '/tiktok/authorize-url', '/tiktok/exchange', '/vapid-public'])
 
 // Constant-time string comparison so response timing can't leak the owner key.
 function safeEqual(a: string, b: string): boolean {
@@ -870,6 +888,66 @@ export default {
     }
 
     // Exchanges the Etsy PKCE code for tokens server-side (same reasoning as above).
+    // Public half of this worker's VAPID key pair (safe to expose): the browser needs it to subscribe.
+    if (url.pathname === '/vapid-public' && request.method === 'GET') {
+      return json({ key: env.VAPID_PUBLIC })
+    }
+
+    // Refreshes an Etsy access token using the keystring saved in Settings.
+    if (url.pathname === '/etsy/refresh' && request.method === 'POST') {
+      const cfg = (await getConfig(env)).etsy
+      if (!cfg.keystring) return json({ error: 'Etsy not configured' }, 400)
+      const body = (await request.json()) as { refreshToken?: string }
+      if (!body.refreshToken) return json({ error: 'Missing refreshToken' }, 400)
+      const resp = await fetch('https://api.etsy.com/v3/public/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: cfg.keystring,
+          refresh_token: body.refreshToken,
+        }),
+      })
+      if (!resp.ok) return json({ error: `refresh_failed_${resp.status}`, detail: await resp.text() }, resp.status)
+      const tokens = (await resp.json()) as { access_token: string; refresh_token: string; expires_in: number }
+      return json({
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: Date.now() + tokens.expires_in * 1000,
+      })
+    }
+
+    // Lists the shop's latest Etsy orders, normalized for the dashboard.
+    // The client sends its Etsy access token as "Authorization: Bearer ...".
+    if (url.pathname === '/etsy/orders' && request.method === 'GET') {
+      const cfg = (await getConfig(env)).etsy
+      if (!cfg.keystring || !cfg.sharedSecret || !cfg.shopId) return json({ error: 'Etsy not configured' }, 400)
+      const auth = request.headers.get('Authorization')
+      if (!auth?.startsWith('Bearer ')) return json({ error: 'Missing Authorization header' }, 401)
+      const etsyResp = await fetch(
+        `https://openapi.etsy.com/v3/application/shops/${cfg.shopId}/receipts?limit=25&sort_on=created&sort_order=desc`,
+        { headers: { 'x-api-key': `${cfg.keystring}:${cfg.sharedSecret}`, Authorization: auth } },
+      )
+      if (etsyResp.status === 401) return json({ error: 'token_expired' }, 401)
+      if (!etsyResp.ok) return json({ error: `etsy_${etsyResp.status}`, detail: await etsyResp.text() }, etsyResp.status)
+      const data = (await etsyResp.json()) as { count: number; results: EtsyReceipt[] }
+      const orders = data.results.map(r => {
+        const productTitle = r.transactions[0]?.title ?? 'Unknown product'
+        const extraCount = Math.max(0, r.transactions.length - 1)
+        return {
+          id: `etsy-${r.receipt_id}`,
+          store: 'etsy' as const,
+          product: extraCount > 0 ? `${productTitle} + ${extraCount} more` : productTitle,
+          buyer: r.name,
+          amount: r.grandtotal.amount / r.grandtotal.divisor,
+          currency: r.grandtotal.currency_code,
+          status: etsyOrderStatus(r),
+          createdAt: new Date(r.created_timestamp * 1000).toISOString(),
+        }
+      })
+      return json({ orders, count: data.count })
+    }
+
     if (url.pathname === '/etsy/token-exchange' && request.method === 'POST') {
       const cfg = (await getConfig(env)).etsy
       if (!cfg.keystring) return json({ error: 'Etsy not configured' }, 400)

@@ -1,5 +1,5 @@
 // Etsy client — handles token storage, refresh, and order fetching.
-import { WORKER_URL, workerFetch } from './worker'
+import { workerUrl, workerFetch } from './worker'
 
 const STORAGE_KEY = 'shoplens_etsy_tokens'
 
@@ -43,7 +43,7 @@ export function isConnected(): boolean {
 }
 
 async function refreshTokens(refreshToken: string): Promise<EtsyTokens> {
-  const resp = await fetch('/api/etsy/refresh', {
+  const resp = await workerFetch(`${workerUrl()}/etsy/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken }),
@@ -76,7 +76,7 @@ async function getValidAccessToken(): Promise<string> {
 
 export async function fetchEtsyOrders(): Promise<Order[]> {
   const accessToken = await getValidAccessToken()
-  const resp = await fetch('/api/etsy/orders', {
+  const resp = await workerFetch(`${workerUrl()}/etsy/orders`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
 
@@ -85,7 +85,7 @@ export async function fetchEtsyOrders(): Promise<Order[]> {
     const tokens = loadTokens()
     if (tokens) {
       const refreshed = await refreshTokens(tokens.refreshToken)
-      const retry = await fetch('/api/etsy/orders', {
+      const retry = await workerFetch(`${workerUrl()}/etsy/orders`, {
         headers: { Authorization: `Bearer ${refreshed.accessToken}` },
       })
       if (!retry.ok) throw new Error(`Etsy fetch failed after refresh: ${retry.status}`)
@@ -123,7 +123,7 @@ export interface EtsyListingsData {
 }
 
 export async function fetchEtsyListings(): Promise<EtsyListingsData> {
-  const resp = await workerFetch(`${WORKER_URL}/etsy/listings`)
+  const resp = await workerFetch(`${workerUrl()}/etsy/listings`)
   if (!resp.ok) throw new Error(`Etsy listings failed: ${resp.status}`)
   return (await resp.json()) as EtsyListingsData
 }
@@ -154,6 +154,20 @@ export async function connectEtsy() {
   const challenge = base64UrlEncode(await sha256(verifier))
   const state = randomString(32)
   localStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state }))
-  const params = new URLSearchParams({ code_challenge: challenge, state })
-  window.location.href = `/api/etsy/connect?${params}`
+  const params = new URLSearchParams({
+    code_challenge: challenge,
+    state,
+    redirect_uri: `${window.location.origin}/api/etsy/callback`,
+  })
+  try {
+    const resp = await workerFetch(`${workerUrl()}/etsy/authorize-url?${params}`)
+    if (!resp.ok) {
+      window.alert("Etsy isn't connected yet. Open Settings and add your Etsy app credentials first.")
+      return
+    }
+    const { url } = (await resp.json()) as { url: string }
+    window.location.href = url
+  } catch {
+    window.alert('Could not reach your server. Open Settings and check the server URL and owner key.')
+  }
 }
