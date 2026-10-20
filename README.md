@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/card.png" alt="ShopLens"></p>
+
 # ShopLens
 
 A unified multi-store dashboard for e-commerce sellers: real orders from Etsy and Amazon in one place, with real-time push notifications when a new order comes in.
