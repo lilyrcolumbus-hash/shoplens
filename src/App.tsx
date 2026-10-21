@@ -1271,13 +1271,8 @@ export default function App() {
             <p className="text-white font-semibold text-lg mb-1">Welcome to ShopLens</p>
             <p className="text-white/55 mb-4 text-sm">
               One dashboard for your Etsy, Amazon and TikTok Shop orders, with push notifications for new ones.
-              ShopLens is a single-owner app: it runs against your own server, so your store data stays yours.
+              Enter your server in Settings, then connect the shops you want from the list below.
             </p>
-            <ol className="text-left text-sm text-white/60 space-y-1 mb-6 max-w-sm mx-auto list-decimal list-inside">
-              <li>Deploy your own worker (the README walks through it).</li>
-              <li>Open Settings and enter your server URL and owner key.</li>
-              <li>Add your store credentials and connect your shops.</li>
-            </ol>
             <button
               onClick={() => setShowSettings(true)}
               className="px-5 py-3 rounded-xl font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition inline-flex items-center gap-2"
@@ -1339,7 +1334,7 @@ export default function App() {
         )}
 
         {/* Store connections */}
-        {hasServer() && (
+        {(
           <section>
             <h2 className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-3">Stores</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1389,7 +1384,8 @@ export default function App() {
                       <button
                         onClick={e => {
                           e.stopPropagation()
-                          if (store === 'tiktok') connectTiktok()
+                          if (!hasServer()) setShowSettings(true)
+                          else if (store === 'tiktok') connectTiktok()
                           else connectEtsy()
                         }}
                         className="w-full mt-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-black bg-gradient-to-r from-[#ffb800] to-[#f5a623] active:scale-95 transition flex items-center justify-center gap-1.5"
